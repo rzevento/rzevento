@@ -7,3 +7,4 @@ dist/
 
 tansa/
 .env.local.rtf
+node_modules/
