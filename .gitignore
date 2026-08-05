@@ -1,0 +1,9 @@
+ønode_modules/
+dist/
+.env
+.env.*
+!.env.example
+.DS_Store
+
+tansa/
+.env.local.rtf
