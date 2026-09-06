@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client'
 import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query'
 import { createRootRoute, createRoute, createRouter, Link, Outlet, RouterProvider, useNavigate, useParams } from '@tanstack/react-router'
 import { AlertCircle, ArrowRight, CalendarDays, Camera, Check, CheckCircle2, ChevronDown, Clock3, Download, Eye, EyeOff, Filter, LayoutDashboard, LockKeyhole, MapPin, Menu, MoreHorizontal, QrCode, Search, Send, Settings2, ShieldCheck, Users, X } from 'lucide-react'
-import { cancelRsvp, checkInGuest, createGuest, findGuestByQr, markInvitationSent, submitRsvp, supabase } from './lib/supabase'
+import { cancelRsvp, checkInGuest, createGuest, findGuestByQr, getCurrentOrganizerProfile, markInvitationSent, submitRsvp, supabase } from './lib/supabase'
 import './styles.css'
 
 type GuestStatus = 'Confirmado' | 'Pendiente' | 'Canceló'
@@ -47,10 +47,10 @@ const guestQuery = async (): Promise<Guest[]> => {
   })
 }
 
-function Logo() { return <div className="logo-mark" aria-label="RZ"><span>│</span><i></i><i></i><b></b><em></em></div> }
+function Logo() { return <img className="brand-logo" src="/logo-rz.png" alt="RZ" /> }
 
 function PublicShell() {
-  return <div className="public-shell"><header className="public-nav"><Link to="/" className="brand"><Logo /><span>RZ EVENTOS</span></Link><Link to="/admin" className="quiet-link">Acceso organizador <ArrowRight size={15} /></Link></header><Outlet /></div>
+  return <div className="public-shell"><header className="public-nav"><Link to="/" className="brand"><Logo /><span>RZ EVENTOS</span></Link><nav className="public-menu" aria-label="Navegación principal"><Link to="/informacion" activeProps={{ className: 'active' }}>Sobre el evento</Link><Link to="/admin" className="quiet-link">Acceso organizador <ArrowRight size={15} /></Link></nav></header><Outlet /></div>
 }
 
 function RegistrationPage({ token = 'demo' }: { token?: string }) {
@@ -77,7 +77,7 @@ function RegistrationPage({ token = 'demo' }: { token?: string }) {
     }
     setSent(true)
   }
-  return <main className="register-page"><section className="register-intro"><div className="circle circle-one"></div><div className="circle circle-two"></div><Logo /><p className="eyebrow">{event.eyebrow}</p><h1>{event.title} <span>{event.accent}</span></h1><div className="line"></div><p className="intro-copy">Una conversación para quienes construyen empresas que trascienden generaciones.</p><div className="event-meta"><div><CalendarDays size={19} /><span>{event.date}<small>{event.time}</small></span></div><div><MapPin size={19} /><span>{event.venue}<small>{event.city}</small></span></div></div></section><section className="register-card"><div className="card-top"><p className="eyebrow">Evento exclusivo por invitación</p><h2>Confirma tu asistencia</h2><p>Completa tus datos para reservar tu lugar.</p></div><form onSubmit={handleSubmit}><label>Nombre completo<input required value={form.name} onChange={update('name')} placeholder="Tu nombre" /></label><label>Correo electrónico <small>(opcional si registras celular)</small><input type="email" value={form.email} onChange={update('email')} placeholder="nombre@empresa.com" /></label><label>Celular <small>(opcional si registras correo)</small><input type="tel" value={form.phone} onChange={update('phone')} placeholder="10 dígitos" /></label><label>¿De dónde vienes?<input required value={form.origin} onChange={update('origin')} placeholder="Ciudad o empresa" /></label>{error && <p className="form-error">{error}</p>}<button className="button button-orange" type="submit" disabled={submitting}>{submitting ? 'Guardando…' : 'Confirmar asistencia'} {!submitting && <ArrowRight size={17} />}</button></form><p className="privacy-note"><ShieldCheck size={15} /> Tus datos se utilizarán únicamente para la organización del evento.</p></section></main>
+  return <main className="register-page"><section className="register-intro"><div className="circle circle-one"></div><div className="circle circle-two"></div><Logo /><p className="eyebrow">{event.eyebrow}</p><h1>{event.title} <span>{event.accent}</span></h1><div className="line"></div><p className="intro-copy">Una conversación para quienes construyen empresas que trascienden generaciones.</p><div className="event-meta"><div><CalendarDays size={19} /><span>{event.date}<small>{event.time}</small></span></div><div><MapPin size={19} /><span>{event.venue}<small>{event.city}</small></span></div></div></section><section className="register-card"><div className="card-top"><p className="eyebrow">Evento exclusivo por invitación</p><h2>Confirma tu asistencia</h2><div className="invitation-notices"><p><ShieldCheck size={15} /> Ingresa el correo o celular con el que fuiste invitado.</p><p><LockKeyhole size={15} /> Esta invitación es personal e intransferible.</p></div><p>Completa tus datos para reservar tu lugar.</p></div><form onSubmit={handleSubmit}><label>Nombre completo<input required value={form.name} onChange={update('name')} placeholder="Tu nombre" /></label><label>Correo electrónico<input type="email" value={form.email} onChange={update('email')} placeholder="nombre@empresa.com" /></label><label>Celular<input type="tel" value={form.phone} onChange={update('phone')} placeholder="10 dígitos" /></label><label>Empresa<input required value={form.origin} onChange={update('origin')} placeholder="Nombre de la empresa" /></label>{error && <p className="form-error">{error}</p>}<button className="button button-orange" type="submit" disabled={submitting}>{submitting ? 'Guardando…' : 'Confirmar asistencia'} {!submitting && <ArrowRight size={17} />}</button></form><p className="privacy-note"><ShieldCheck size={15} /> Tus datos se utilizarán únicamente para la organización del evento.</p></section></main>
 }
 
 function TokenRegistrationPage() {
@@ -85,23 +85,30 @@ function TokenRegistrationPage() {
   return <RegistrationPage token={token} />
 }
 
+function InformationPage() {
+  return <main className="information-page"><section className="information-hero"><div><p className="eyebrow orange">Sobre el evento</p><h1>Ideas para construir empresas que <span>trascienden.</span></h1><p className="information-lead">Una conversación cercana para familias empresarias que quieren entender mejor los retos y las oportunidades de crecer en tiempos de cambio.</p><Link className="button button-orange" to="/">Confirmar asistencia <ArrowRight size={17} /></Link></div></section><section className="information-grid"><article className="information-card information-card-dark"><p className="eyebrow orange">La conversación</p><h2>Familias empresarias en la era de las turbulencias</h2><p>El encuentro propone un espacio para compartir perspectivas prácticas sobre continuidad, liderazgo y toma de decisiones cuando el entorno cambia.</p><div className="book-note"><span className="eyebrow orange">Libro de referencia</span><strong>Familias empresarias en la sociedad del cambio</strong><small>Agenda estratégica para la gobernanza y el liderazgo transformador</small><p>En su libro, Manuel Bermejo aborda la transición generacional, la gobernanza y el liderazgo que necesitan las familias empresarias para adaptarse a una sociedad marcada por la tecnología, la globalización y la incertidumbre.</p><a href="https://www.lidlibros.com/fichalibro.php?edi=88&libro=10560" target="_blank" rel="noreferrer">Conocer el libro <ArrowRight size={14} /></a></div><div className="information-details"><div><CalendarDays size={18} /><span>{event.date}<small>{event.time}</small></span></div><div><MapPin size={18} /><span>{event.venue}<small>{event.city}</small></span></div></div></article><article className="information-card speaker-card"><p className="eyebrow orange">El expositor</p><div className="speaker-initials" aria-hidden="true">MB</div><h2>{event.speaker}</h2><div className="speaker-bio"><p>Manuel Bermejo Sánchez es especialista en empresa familiar, gobierno corporativo y liderazgo. Es presidente ejecutivo y fundador de The Family Advisory Board, así como director general de los Programas de Empresa Familiar de Executive Education en IE Business School.</p><p>Es doctor en Economía por la Universidad de Granada, ingeniero agrónomo por la Universidad Politécnica de Madrid y MBA por IE Business School. También cuenta con formación en Harvard Business School y Babson College.</p><p>Durante más de tres décadas ha acompañado a familias empresarias y participado como profesor, consejero y conferencista en Europa y Latinoamérica.</p></div><div className="speaker-moderator"><span>Conversación moderada por</span><strong>{event.moderator}</strong></div></article></section><section className="information-footer"><div><p className="eyebrow">Una invitación</p><h2>Reserva tu lugar en esta conversación.</h2></div><Link className="outline-button" to="/">Ir al registro <ArrowRight size={16} /></Link></section></main>
+}
+
 function AdminLayout() {
   const [sessionReady, setSessionReady] = useState(false)
   const [authenticated, setAuthenticated] = useState(false)
+  const [organizer, setOrganizer] = useState({ displayName: 'Organizador', role: 'Organizador' })
   const [localAuthenticated, setLocalAuthenticated] = useState(() => sessionStorage.getItem('rz-organizer-authenticated') === 'true')
   useEffect(() => {
     if (!supabase) {
       setAuthenticated(localAuthenticated)
+      setOrganizer({ displayName: 'María Ríos', role: 'Organizadora' })
       setSessionReady(true)
       return
     }
-    supabase.auth.getSession().then(({ data }) => { setAuthenticated(Boolean(data.session)); setSessionReady(true) })
+    supabase.auth.getSession().then(({ data }) => { setAuthenticated(Boolean(data.session)); setSessionReady(true); if (data.session) void getCurrentOrganizerProfile().then(result => { if (result.data) setOrganizer(result.data) }) })
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => setAuthenticated(Boolean(session)))
     return () => listener.subscription.unsubscribe()
   }, [localAuthenticated])
   if (!sessionReady) return <div className="auth-loading">Cargando acceso…</div>
   if (!authenticated) return <AdminLogin onLocalAuthenticated={() => { sessionStorage.setItem('rz-organizer-authenticated', 'true'); setLocalAuthenticated(true); setAuthenticated(true) }} />
-  return <div className="admin-shell"><aside className="sidebar"><div className="sidebar-brand"><Logo /><span>RZ EVENTOS</span></div><div className="event-switcher"><span>EVENTO ACTIVO</span><strong>Familias empresarias</strong><ChevronDown size={15} /></div><nav><Link to="/admin" activeProps={{ className: 'active' }}><LayoutDashboard size={18} /> Resumen</Link><Link to="/admin/invitados" activeProps={{ className: 'active' }}><Users size={18} /> Invitados <b>128</b></Link><Link to="/admin/check-in" activeProps={{ className: 'active' }}><CheckCircle2 size={18} /> Registro en evento</Link><Link to="/admin/configuracion" activeProps={{ className: 'active' }}><Settings2 size={18} /> Configuración</Link></nav><div className="sidebar-bottom"><div className="user-avatar">MR</div><div><strong>María Ríos</strong><small>Organizadora</small></div><button className="sidebar-logout" onClick={() => { sessionStorage.removeItem('rz-organizer-authenticated'); if (supabase) void supabase.auth.signOut(); else { setLocalAuthenticated(false); setAuthenticated(false) } }} aria-label="Cerrar sesión"><MoreHorizontal size={18} /></button></div></aside><main className="admin-main"><header className="admin-header"><button className="mobile-menu"><Menu size={20} /></button><div><p className="eyebrow">Martes 17 de noviembre de 2026</p><h1>Familias empresarias</h1></div><div className="header-actions"><button className="icon-button"><Download size={17} /></button><button className="button button-orange small"><Send size={16} /> Nueva invitación</button></div></header><Outlet /></main></div>
+  const organizerInitials = organizer.displayName.split(' ').map(name => name[0]).slice(0, 2).join('').toUpperCase()
+  return <div className="admin-shell"><aside className="sidebar"><div className="sidebar-brand"><Logo /><span>RZ EVENTOS</span></div><div className="event-switcher"><span>EVENTO ACTIVO</span><strong>Familias empresarias</strong><ChevronDown size={15} /></div><nav><Link to="/admin" activeProps={{ className: 'active' }}><LayoutDashboard size={18} /> Resumen</Link><Link to="/admin/invitados" activeProps={{ className: 'active' }}><Users size={18} /> Invitados <b>128</b></Link><Link to="/admin/check-in" activeProps={{ className: 'active' }}><CheckCircle2 size={18} /> Registro en evento</Link><Link to="/admin/configuracion" activeProps={{ className: 'active' }}><Settings2 size={18} /> Configuración</Link></nav><div className="sidebar-bottom"><div className="user-avatar">{organizerInitials}</div><div><strong>{organizer.displayName}</strong><small>{organizer.role}</small></div><button className="sidebar-logout" onClick={() => { sessionStorage.removeItem('rz-organizer-authenticated'); if (supabase) void supabase.auth.signOut(); else { setLocalAuthenticated(false); setAuthenticated(false) } }} aria-label="Cerrar sesión"><MoreHorizontal size={18} /></button></div></aside><main className="admin-main"><header className="admin-header"><button className="mobile-menu"><Menu size={20} /></button><div><p className="eyebrow">Martes 17 de noviembre de 2026</p><h1>Familias empresarias</h1></div><div className="header-actions"><button className="icon-button"><Download size={17} /></button><button className="button button-orange small"><Send size={16} /> Nueva invitación</button></div></header><Outlet /></main></div>
 }
 
 function AdminLogin({ onLocalAuthenticated }: { onLocalAuthenticated: () => void }) {
@@ -282,12 +289,13 @@ function ConfigurationPage() { return <section className="dashboard"><div classN
 const rootRoute = createRootRoute({ component: PublicShell })
 const homeRoute = createRoute({ getParentRoute: () => rootRoute, path: '/', component: RegistrationPage })
 const tokenRoute = createRoute({ getParentRoute: () => rootRoute, path: '/registro/$token', component: TokenRegistrationPage })
+const informationRoute = createRoute({ getParentRoute: () => rootRoute, path: '/informacion', component: InformationPage })
 const adminRoute = createRoute({ getParentRoute: () => rootRoute, path: '/admin', component: AdminLayout })
 const summaryRoute = createRoute({ getParentRoute: () => adminRoute, path: '/', component: SummaryPage })
 const guestsRoute = createRoute({ getParentRoute: () => adminRoute, path: '/invitados', component: GuestsPage })
 const checkinRoute = createRoute({ getParentRoute: () => adminRoute, path: '/check-in', component: CheckInPage })
 const configRoute = createRoute({ getParentRoute: () => adminRoute, path: '/configuracion', component: ConfigurationPage })
-const routeTree = rootRoute.addChildren([homeRoute, tokenRoute, adminRoute.addChildren([summaryRoute, guestsRoute, checkinRoute, configRoute])])
+const routeTree = rootRoute.addChildren([homeRoute, tokenRoute, informationRoute, adminRoute.addChildren([summaryRoute, guestsRoute, checkinRoute, configRoute])])
 const router = createRouter({ routeTree })
 
 declare module '@tanstack/react-router' { interface Register { router: typeof router } }
