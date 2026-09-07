@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client'
 import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query'
 import { createRootRoute, createRoute, createRouter, Link, Outlet, RouterProvider, useNavigate, useParams } from '@tanstack/react-router'
 import { AlertCircle, ArrowRight, CalendarDays, Camera, Check, CheckCircle2, ChevronDown, Clock3, Download, Eye, EyeOff, Filter, LayoutDashboard, LockKeyhole, MapPin, Menu, MoreHorizontal, QrCode, Search, Send, Settings2, ShieldCheck, Upload, Users, X } from 'lucide-react'
-import { addEventMember, cancelRsvp, checkInGuest, createGuest, findGuestByQr, getCurrentOrganizerProfile, getEventMembers, markInvitationSent, submitRsvp, supabase } from './lib/supabase'
+import { addEventMember, beginRsvp, cancelRsvp, checkInGuest, createGuest, findGuestByQr, getCurrentOrganizerProfile, getEventMembers, sendInvitation, submitRsvp, supabase } from './lib/supabase'
 import './styles.css'
 
 type GuestStatus = 'Confirmado' | 'Pendiente' | 'Canceló'
@@ -54,13 +54,15 @@ function PublicShell() {
 }
 
 function RegistrationPage({ token = 'demo' }: { token?: string }) {
+  const directToken = token !== 'demo' ? token : ''
+  const [resolvedToken, setResolvedToken] = useState(directToken)
   const [sent, setSent] = useState(false)
   const [cancelled, setCancelled] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
   const [form, setForm] = useState({ name: '', email: '', phone: '', origin: '' })
   const update = (key: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) => setForm({ ...form, [key]: e.target.value })
-  if (sent) return <main className="register-page success-page"><div className="success-card"><div className="success-icon">{cancelled ? <span>×</span> : <Check size={25} />}</div><p className="eyebrow">{cancelled ? 'Asistencia cancelada' : 'Registro recibido'}</p><h1>{cancelled ? 'Tu cancelación quedó registrada.' : `Gracias, ${form.name.split(' ')[0] || 'por confirmar'}.`}</h1><p>{cancelled ? 'Si cambias de opinión, puedes volver a confirmar desde este mismo enlace.' : 'Tu lugar para la conferencia está apartado. Te esperamos el martes 17 de noviembre en Hyatt Regency Andares.'}</p>{!cancelled && <div className="success-details"><CalendarDays size={18} /><span>{event.date}<br /><small>{event.time}</small></span></div>}<div className="success-actions"><Link className="button button-dark" to="/">Volver al inicio</Link>{!cancelled && <button className="cancel-link" onClick={() => { void cancelRsvp(token).then(result => { if (!result.error) setCancelled(true) }) }}>Ya no podré asistir</button>}</div></div></main>
+  if (sent) return <main className="register-page success-page"><div className="success-card"><div className="success-icon">{cancelled ? <span>×</span> : <Check size={25} />}</div><p className="eyebrow">{cancelled ? 'Asistencia cancelada' : 'Registro recibido'}</p><h1>{cancelled ? 'Tu cancelación quedó registrada.' : `Gracias, ${form.name.split(' ')[0] || 'por confirmar'}.`}</h1><p>{cancelled ? 'Si cambias de opinión, puedes volver a confirmar desde este mismo enlace.' : 'Tu lugar para la conferencia está apartado. Te esperamos el martes 17 de noviembre en Hyatt Regency Andares.'}</p>{!cancelled && <div className="success-details"><CalendarDays size={18} /><span>{event.date}<br /><small>{event.time}</small></span></div>}<div className="success-actions"><Link className="button button-dark" to="/">Volver al inicio</Link>{!cancelled && <button className="cancel-link" onClick={() => { void cancelRsvp(resolvedToken || token).then(result => { if (!result.error) setCancelled(true) }) }}>Ya no podré asistir</button>}</div></div></main>
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
     if (!form.email.trim() && !form.phone.trim()) {
@@ -69,7 +71,15 @@ function RegistrationPage({ token = 'demo' }: { token?: string }) {
     }
     setSubmitting(true)
     setError('')
-    const result = await submitRsvp({ token, ...form })
+    let currentToken = resolvedToken
+    if (!currentToken) {
+      const lookup = await beginRsvp(form.email || form.phone)
+      if (lookup.error) { setSubmitting(false); setError('No encontramos ese correo o celular en la lista de invitados.'); return }
+      if (lookup.data?.status === 'already_registered') { setSubmitting(false); setError('Este invitado ya está registrado.'); return }
+      currentToken = lookup.data?.token || ''
+      setResolvedToken(currentToken)
+    }
+    const result = await submitRsvp({ token: currentToken, ...form })
     setSubmitting(false)
     if (result.error) {
       setError('No pudimos completar el registro. Verifica tu enlace e inténtalo de nuevo.')
@@ -164,11 +174,11 @@ function InvitationState({ guest }: { guest: Guest }) {
   const [saving, setSaving] = useState(false)
   async function markSent() {
     setSaving(true)
-    const result = await markInvitationSent(guest.id)
+    const result = await sendInvitation(guest.id)
     setSaving(false)
     if (!result.error) queryClient.setQueryData<Guest[]>(['guests'], current => (current || demoGuests).map(item => item.id === guest.id ? { ...item, invite: 'Enviada' } : item))
   }
-  return guest.invite === 'Enviada' ? <span className="sent-label"><Send size={13} /> Enviada</span> : <button className="send-inline" disabled={saving} onClick={() => void markSent()}>{saving ? 'Guardando…' : 'Marcar enviada'}</button>
+  return guest.invite === 'Enviada' ? <span className="sent-label"><Send size={13} /> Enviada</span> : <button className="send-inline" disabled={saving} onClick={() => void markSent()}>{saving ? 'Enviando…' : 'Enviar invitación'}</button>
 }
 
 function NewGuestModal({ onClose }: { onClose: () => void }) {

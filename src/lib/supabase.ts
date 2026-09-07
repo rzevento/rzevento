@@ -48,6 +48,12 @@ export async function submitRsvp(input: { token: string; name: string; email: st
   return { data, error, demo: false }
 }
 
+export async function beginRsvp(contact: string) {
+  if (!supabase) return { data: { token: 'demo-token', status: 'pending' }, error: null, demo: true }
+  const { data, error } = await supabase.rpc('begin_rsvp', { guest_contact: contact.trim() })
+  return { data, error, demo: false }
+}
+
 export async function cancelRsvp(token: string) {
   if (!supabase) return { data: null, error: null, demo: true }
   const { data, error } = await supabase.rpc('cancel_rsvp', { invitation_token: token })
@@ -111,5 +117,11 @@ export async function markInvitationSent(guestId: string) {
   const { data: activeEvent, error: eventError } = await supabase.from('events').select('id').order('created_at', { ascending: false }).limit(1).maybeSingle()
   if (eventError || !activeEvent) return { data: null, error: eventError || new Error('No active event'), demo: false }
   const { data, error } = await supabase.from('invitations').update({ status: 'sent', sent_at: new Date().toISOString() }).eq('event_id', activeEvent.id).eq('guest_id', guestId).select().single()
+  return { data, error, demo: false }
+}
+
+export async function sendInvitation(guestId: string) {
+  if (!supabase) return { data: null, error: null, demo: true }
+  const { data, error } = await supabase.functions.invoke('send-invitation', { body: { guest_id: guestId } })
   return { data, error, demo: false }
 }
