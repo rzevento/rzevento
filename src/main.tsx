@@ -50,6 +50,18 @@ const guestQuery = async (): Promise<Guest[]> => {
   })
 }
 
+function downloadGuestCsv(guests: Guest[]) {
+  const header = ['nombre', 'correo', 'celular', 'empresa', 'invitacion', 'respuesta', 'asistencia']
+  const rows = guests.map(g => [g.name, g.email, g.phone, g.company, g.invite, g.status, g.checkedIn ? 'Presente' : 'Pendiente'])
+  const csv = [header, ...rows].map(row => row.map(value => `"${String(value).replaceAll('"', '""')}"`).join(',')).join('\n')
+  const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }))
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = 'invitados-familias-empresarias.csv'
+  anchor.click()
+  URL.revokeObjectURL(url)
+}
+
 function Logo() { return <img className="brand-logo" src="/logo-rz.png" alt="RZ" /> }
 
 function PublicShell() {
@@ -155,8 +167,10 @@ function InformationPage() {
 
 function AdminLayout() {
   const { data: guests = [] } = useQuery({ queryKey: ['guests'], queryFn: guestQuery })
+  const navigate = useNavigate()
   const [sessionReady, setSessionReady] = useState(false)
   const [authenticated, setAuthenticated] = useState(false)
+  const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const [organizer, setOrganizer] = useState({ displayName: 'Administrador', role: 'Administrador' })
   const [localAuthenticated, setLocalAuthenticated] = useState(() => sessionStorage.getItem('rz-organizer-authenticated') === 'true')
   useEffect(() => {
@@ -174,7 +188,7 @@ function AdminLayout() {
   if (!authenticated) return <AdminLogin onLocalAuthenticated={() => { sessionStorage.setItem('rz-organizer-authenticated', 'true'); setLocalAuthenticated(true); setAuthenticated(true) }} />
   const organizerInitials = organizer.displayName.split(' ').map(name => name[0]).slice(0, 2).join('').toUpperCase()
   const sentInvitations = guests.filter(guest => guest.invite === 'Enviada').length
-  return <div className="admin-shell"><aside className="sidebar"><div className="sidebar-brand"><Logo /><span>RZ EVENTOS</span></div><div className="event-switcher"><span>EVENTO ACTIVO</span><strong>Familias empresarias</strong><ChevronDown size={15} /></div><nav><Link to="/admin" activeOptions={{ exact: true }} activeProps={{ className: 'active' }}><LayoutDashboard size={18} /> Resumen</Link><Link to="/admin/invitados" activeProps={{ className: 'active' }}><Users size={18} /> Invitados <b>{sentInvitations}</b></Link><Link to="/admin/check-in" activeProps={{ className: 'active' }}><CheckCircle2 size={18} /> Registro en evento</Link><Link to="/admin/configuracion" activeProps={{ className: 'active' }}><Settings2 size={18} /> Configuración</Link></nav><div className="sidebar-bottom"><div className="user-avatar">{organizerInitials}</div><div><strong>{organizer.displayName}</strong><small>{organizer.role}</small></div><button className="sidebar-logout" onClick={() => { sessionStorage.removeItem('rz-organizer-authenticated'); if (supabase) void supabase.auth.signOut(); else { setLocalAuthenticated(false); setAuthenticated(false) } }} aria-label="Cerrar sesión"><MoreHorizontal size={18} /></button></div></aside><main className="admin-main"><header className="admin-header"><button className="mobile-menu"><Menu size={20} /></button><div><p className="eyebrow">Martes 17 de noviembre de 2026</p><h1>Familias empresarias</h1></div><div className="header-actions"><button className="icon-button"><Download size={17} /></button><button className="button button-orange small"><Send size={16} /> Nueva invitación</button></div></header><Outlet /></main></div>
+  return <div className={`admin-shell ${mobileNavOpen ? 'mobile-open' : ''}`}><aside className="sidebar"><div className="sidebar-brand"><Logo /><span>RZ EVENTOS</span></div><div className="event-switcher"><span>EVENTO ACTIVO</span><strong>Familias empresarias</strong><ChevronDown size={15} /></div><nav onClick={() => setMobileNavOpen(false)}><Link to="/admin" activeOptions={{ exact: true }} activeProps={{ className: 'active' }}><LayoutDashboard size={18} /> Resumen</Link><Link to="/admin/invitados" activeProps={{ className: 'active' }}><Users size={18} /> Invitados <b>{sentInvitations}</b></Link><Link to="/admin/check-in" activeProps={{ className: 'active' }}><CheckCircle2 size={18} /> Registro en evento</Link><Link to="/admin/configuracion" activeProps={{ className: 'active' }}><Settings2 size={18} /> Configuración</Link></nav><div className="sidebar-bottom"><div className="user-avatar">{organizerInitials}</div><div><strong>{organizer.displayName}</strong><small>{organizer.role}</small></div><button className="sidebar-logout" onClick={() => { sessionStorage.removeItem('rz-organizer-authenticated'); if (supabase) void supabase.auth.signOut(); else { setLocalAuthenticated(false); setAuthenticated(false) } }} aria-label="Cerrar sesión"><MoreHorizontal size={18} /></button></div></aside><main className="admin-main"><header className="admin-header"><button className="mobile-menu" onClick={() => setMobileNavOpen(current => !current)} aria-label="Abrir menú"><Menu size={20} /></button><div><p className="eyebrow">Martes 17 de noviembre de 2026</p><h1>Familias empresarias</h1></div><div className="header-actions"><button className="icon-button" onClick={() => downloadGuestCsv(guests)} aria-label="Descargar lista de invitados"><Download size={17} /></button><button className="button button-orange small" onClick={() => void navigate({ to: '/admin/invitados' })}><Send size={16} /> Nueva invitación</button></div></header><Outlet /></main></div>
 }
 
 function AdminLogin({ onLocalAuthenticated }: { onLocalAuthenticated: () => void }) {
