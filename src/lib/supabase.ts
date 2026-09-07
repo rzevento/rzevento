@@ -89,6 +89,12 @@ export async function checkInGuest(guestId: string) {
   return { data, error, demo: false }
 }
 
+export async function getInvitationToken(guestId: string) {
+  if (!supabase) return { data: 'demo-token', error: null, demo: true }
+  const { data, error } = await supabase.from('invitations').select('token').eq('guest_id', guestId).maybeSingle()
+  return { data: data?.token || null, error, demo: false }
+}
+
 export async function findGuestByQr(value: string) {
   const code = value.trim()
   if (!code) return { data: null, error: new Error('Código vacío'), demo: !supabase }

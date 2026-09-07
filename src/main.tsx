@@ -6,7 +6,7 @@ import { AlertCircle, ArrowRight, CalendarDays, Camera, Check, CheckCircle2, Che
 import { jsPDF } from 'jspdf'
 import QRCode from 'qrcode'
 import { Html5Qrcode } from 'html5-qrcode'
-import { addEventMember, beginRsvp, cancelRsvp, checkInGuest, createGuest, findGuestByQr, getCurrentOrganizerProfile, getEventMembers, sendInvitation, submitRsvp, supabase } from './lib/supabase'
+import { addEventMember, beginRsvp, cancelRsvp, checkInGuest, createGuest, findGuestByQr, getCurrentOrganizerProfile, getEventMembers, getInvitationToken, sendInvitation, submitRsvp, supabase } from './lib/supabase'
 import './styles.css'
 
 type GuestStatus = 'Confirmado' | 'Pendiente' | 'Canceló'
@@ -23,6 +23,44 @@ const event = {
   venue: 'Hyatt Regency Andares',
   city: 'Guadalajara, Jalisco',
   deadline: 'Antes del 16 de noviembre de 2026',
+}
+
+async function downloadGuestPass(name: string, accessToken: string) {
+  const qrDataUrl = await QRCode.toDataURL(accessToken, { errorCorrectionLevel: 'H', width: 900, margin: 4, color: { dark: '#241f1a', light: '#fffdf9' } })
+  const pdf = new jsPDF({ unit: 'mm', format: 'a4' })
+  const pageWidth = pdf.internal.pageSize.getWidth()
+  pdf.setFillColor(246, 242, 236)
+  pdf.rect(0, 0, pageWidth, 297, 'F')
+  pdf.setFillColor(255, 253, 249)
+  pdf.rect(18, 18, pageWidth - 36, 261, 'F')
+  pdf.setFillColor(255, 118, 0)
+  pdf.rect(18, 18, pageWidth - 36, 3, 'F')
+  pdf.setTextColor(199, 90, 0)
+  pdf.setFont('helvetica', 'bold')
+  pdf.setFontSize(16)
+  pdf.text('RZ EVENTOS', 30, 42)
+  pdf.setTextColor(36, 31, 26)
+  pdf.setFontSize(27)
+  pdf.text('Entrada personal', 30, 61)
+  pdf.setTextColor(199, 90, 0)
+  pdf.text('Familias empresarias', 30, 75)
+  pdf.setTextColor(36, 31, 26)
+  pdf.setFontSize(23)
+  pdf.text(name || 'Invitado', 30, 98)
+  pdf.setFont('helvetica', 'normal')
+  pdf.setFontSize(13)
+  pdf.text(event.date, 30, 114)
+  pdf.text(`${event.time} · ${event.venue}`, 30, 123)
+  pdf.text(event.city, 30, 132)
+  pdf.addImage(qrDataUrl, 'PNG', 30, 153, 58, 58)
+  pdf.setFont('helvetica', 'bold')
+  pdf.setFontSize(12)
+  pdf.text(pdf.splitTextToSize('Presenta este QR en el acceso', 82), 100, 174)
+  pdf.setFont('helvetica', 'normal')
+  pdf.setFontSize(11)
+  pdf.setTextColor(129, 120, 110)
+  pdf.text(pdf.splitTextToSize('Esta entrada es personal e intransferible. También llegará por correo. No es necesario imprimirla; puedes mostrarla desde tu celular.', 82), 100, 187, { lineHeightFactor: 1.55 })
+  pdf.save('entrada-personal-rz-eventos.pdf')
 }
 
 const demoGuests: Guest[] = [
@@ -275,13 +313,58 @@ function NewGuestModal({ onClose }: { onClose: () => void }) {
   return <div className="modal-backdrop" onMouseDown={onClose}><div className="modal-card" onMouseDown={e => e.stopPropagation()}><button className="modal-close" onClick={onClose} aria-label="Cerrar">×</button><p className="eyebrow orange">Nueva invitación</p><h2>Agregar invitado</h2><p className="muted">Captura el correo o celular con el que fue invitado. El nombre puede completarse después.</p><form onSubmit={save}><label>Nombre completo <small>(opcional)</small><input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="Si ya lo tienes" /></label><label>Correo electrónico <small>(opcional si registras celular)</small><input type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} placeholder="nombre@empresa.com" /></label><label>Celular <small>(opcional si registras correo)</small><input value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} placeholder="10 dígitos" /></label>{error && <p className="form-error">{error}</p>}<button className="button button-orange" disabled={saving}>{saving ? 'Guardando…' : 'Crear invitación'} <ArrowRight size={16} /></button></form></div></div>
 }
 
+function GuestPassModal({ guest, token, onClose }: { guest: Guest; token: string; onClose: () => void }) {
+  const [qrDataUrl, setQrDataUrl] = useState('')
+  useEffect(() => {
+    let current = true
+    void QRCode.toDataURL(token, { errorCorrectionLevel: 'H', width: 720, margin: 3, color: { dark: '#241f1a', light: '#fffdf9' } }).then(value => {
+      if (current) setQrDataUrl(value)
+    })
+    return () => { current = false }
+  }, [token])
+  return <div className="modal-backdrop" onMouseDown={onClose}><div className="modal-card guest-pass-modal" onMouseDown={e => e.stopPropagation()}><button className="modal-close" onClick={onClose} aria-label="Cerrar entrada">×</button><p className="eyebrow orange">Entrada personal</p><h2>{guest.name}</h2><p className="muted">{event.date}<br />{event.time}<br />{event.venue} · {event.city}</p><div className="pass-qr-preview">{qrDataUrl ? <img src={qrDataUrl} alt={`Código QR de ${guest.name}`} /> : <span>Generando QR…</span>}</div><p className="pass-preview-note">Esta entrada es personal e intransferible. Puede mostrarse desde el celular; no necesita imprimirse.</p><button className="button button-orange" disabled={!qrDataUrl} onClick={() => void downloadGuestPass(guest.name, token)}><Download size={16} /> Descargar PDF</button></div></div>
+}
+
 function GuestsPage() {
   const { data = demoGuests } = useQuery({ queryKey: ['guests'], queryFn: guestQuery })
   const [search, setSearch] = useState('')
   const [showNew, setShowNew] = useState(false)
   const [filterStatus, setFilterStatus] = useState<'all' | GuestStatus>('all')
+  const [passGuest, setPassGuest] = useState<Guest | null>(null)
+  const [passToken, setPassToken] = useState('')
+  const [passLoading, setPassLoading] = useState<string | null>(null)
+  const [arrivalLoading, setArrivalLoading] = useState<string | null>(null)
+  const [actionError, setActionError] = useState('')
   const fileInput = useRef<HTMLInputElement>(null)
   const filtered = data.filter(g => `${g.name} ${g.company} ${g.email} ${g.phone}`.toLowerCase().includes(search.toLowerCase()) && (filterStatus === 'all' || g.status === filterStatus))
+  async function openPass(guest: Guest) {
+    setActionError('')
+    setPassLoading(guest.id)
+    try {
+      const result = await getInvitationToken(guest.id)
+      if (result.error || !result.data) { setActionError('No pudimos encontrar la entrada de este invitado.'); return }
+      setPassToken(result.data)
+      setPassGuest(guest)
+    } catch {
+      setActionError('No pudimos abrir la entrada. Inténtalo de nuevo.')
+    } finally {
+      setPassLoading(null)
+    }
+  }
+  async function markArrival(guest: Guest) {
+    setActionError('')
+    setArrivalLoading(guest.id)
+    try {
+      const result = await checkInGuest(guest.id)
+      if (result.error) { setActionError('No pudimos registrar la llegada. Inténtalo de nuevo.'); return }
+      if (result.demo) queryClient.setQueryData<Guest[]>(['guests'], current => (current || []).map(item => item.id === guest.id ? { ...item, checkedIn: true } : item))
+      else await queryClient.invalidateQueries({ queryKey: ['guests'] })
+    } catch {
+      setActionError('No pudimos registrar la llegada. Inténtalo de nuevo.')
+    } finally {
+      setArrivalLoading(null)
+    }
+  }
   function exportCsv() {
     const header = ['nombre', 'correo', 'celular', 'empresa', 'invitacion', 'respuesta', 'asistencia']
     const rows = data.map(g => [g.name, g.email, g.phone, g.company, g.invite, g.status, g.checkedIn ? 'Presente' : 'Pendiente'])
@@ -369,7 +452,7 @@ function GuestsPage() {
     e.target.value = ''
   }
   const count = (status: GuestStatus) => data.filter(g => g.status === status).length
-  return <section className="dashboard"><div className="page-heading"><div><p className="eyebrow orange">Gestión de invitados</p><h2>Lista de invitados <span>{data.length}</span></h2><p className="muted">Consulta respuestas y administra tus invitaciones.</p></div><div className="page-actions"><input ref={fileInput} className="hidden-file" type="file" accept=".csv,text/csv" onChange={importCsv} /><button className="button button-dark" onClick={exportCsv}><Download size={16} /> Exportar CSV</button><button className="button button-dark" onClick={() => fileInput.current?.click()}><Upload size={16} /> Cargar masivamente</button><button className="button button-orange" onClick={() => setShowNew(true)}><Users size={16} /> Agregar invitado</button></div></div><div className="filter-bar"><div className="search-box"><Search size={17} /><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar por nombre, correo, celular o empresa" /></div><button className="filter-button"><Filter size={16} /> Todos los estados <ChevronDown size={15} /> </button><button className="filter-button">Invitación enviada <ChevronDown size={15} /></button></div><div className="panel guests-table-panel"><div className="table-tabs"><button className={filterStatus === 'all' ? 'selected' : ''} onClick={() => setFilterStatus('all')}>Todos <b>{data.length}</b></button><button className={filterStatus === 'Confirmado' ? 'selected' : ''} onClick={() => setFilterStatus('Confirmado')}>Confirmados <b>{count('Confirmado')}</b></button><button className={filterStatus === 'Pendiente' ? 'selected' : ''} onClick={() => setFilterStatus('Pendiente')}>Pendientes <b>{count('Pendiente')}</b></button><button className={filterStatus === 'Canceló' ? 'selected' : ''} onClick={() => setFilterStatus('Canceló')}>Cancelaron <b>{count('Canceló')}</b></button></div><div className="table-head"><span>INVITADO</span><span>ORIGEN</span><span>INVITACIÓN</span><span>RESPUESTA</span><span>ASISTENCIA</span><span></span></div>{filtered.map(g => <div className="table-line" key={g.id}><div className="guest-name"><div className="table-avatar">{g.name.split(' ').map(n => n[0]).slice(0, 2).join('')}</div><span><strong>{g.name}</strong><small>{g.email || g.phone}</small></span></div><span>{g.origin}</span><InvitationState guest={g} /><span className={`status status-${g.status === 'Confirmado' ? 'confirmed' : g.status === 'Canceló' ? 'cancelled' : 'pending'}`}><i></i>{g.status}</span><span className={g.checkedIn ? 'checked-label' : 'muted'}>{g.checkedIn ? <><CheckCircle2 size={14} /> Presente</> : 'Pendiente'}</span><MoreHorizontal size={17} className="row-more" /></div>)}</div>{showNew && <NewGuestModal onClose={() => setShowNew(false)} />}</section>
+  return <section className="dashboard"><div className="page-heading"><div><p className="eyebrow orange">Gestión de invitados</p><h2>Lista de invitados <span>{data.length}</span></h2><p className="muted">Consulta respuestas y administra tus invitaciones.</p></div><div className="page-actions"><input ref={fileInput} className="hidden-file" type="file" accept=".csv,text/csv" onChange={importCsv} /><button className="button button-dark" onClick={exportCsv}><Download size={16} /> Exportar CSV</button><button className="button button-dark" onClick={() => fileInput.current?.click()}><Upload size={16} /> Cargar masivamente</button><button className="button button-orange" onClick={() => setShowNew(true)}><Users size={16} /> Agregar invitado</button></div></div><div className="filter-bar"><div className="search-box"><Search size={17} /><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar por nombre, correo, celular o empresa" /></div><button className="filter-button"><Filter size={16} /> Todos los estados <ChevronDown size={15} /> </button><button className="filter-button">Invitación enviada <ChevronDown size={15} /></button></div>{actionError && <p className="form-error guest-action-error">{actionError}</p>}<div className="panel guests-table-panel"><div className="table-tabs"><button className={filterStatus === 'all' ? 'selected' : ''} onClick={() => setFilterStatus('all')}>Todos <b>{data.length}</b></button><button className={filterStatus === 'Confirmado' ? 'selected' : ''} onClick={() => setFilterStatus('Confirmado')}>Confirmados <b>{count('Confirmado')}</b></button><button className={filterStatus === 'Pendiente' ? 'selected' : ''} onClick={() => setFilterStatus('Pendiente')}>Pendientes <b>{count('Pendiente')}</b></button><button className={filterStatus === 'Canceló' ? 'selected' : ''} onClick={() => setFilterStatus('Canceló')}>Cancelaron <b>{count('Canceló')}</b></button></div><div className="table-head"><span>INVITADO</span><span>ORIGEN</span><span>INVITACIÓN</span><span>RESPUESTA</span><span>ASISTENCIA</span><span>ACCIONES</span></div>{filtered.map(g => <div className="table-line" key={g.id}><div className="guest-name"><div className="table-avatar">{g.name.split(' ').map(n => n[0]).slice(0, 2).join('')}</div><span><strong>{g.name}</strong><small>{g.email || g.phone}</small></span></div><span>{g.origin}</span><InvitationState guest={g} /><span className={`status status-${g.status === 'Confirmado' ? 'confirmed' : g.status === 'Canceló' ? 'cancelled' : 'pending'}`}><i></i>{g.status}</span><span className={g.checkedIn ? 'checked-label' : 'muted'}>{g.checkedIn ? <><CheckCircle2 size={14} /> Presente</> : 'Pendiente'}</span><div className="guest-row-actions"><button className="row-action" disabled={passLoading === g.id} onClick={() => void openPass(g)}><Eye size={15} /> {passLoading === g.id ? 'Abriendo…' : 'Ver entrada'}</button>{!g.checkedIn && <button className="row-action arrival-action" disabled={arrivalLoading === g.id} onClick={() => void markArrival(g)}><CheckCircle2 size={15} /> {arrivalLoading === g.id ? 'Guardando…' : 'Registrar llegada'}</button>}</div></div>)}</div>{showNew && <NewGuestModal onClose={() => setShowNew(false)} />}{passGuest && <GuestPassModal guest={passGuest} token={passToken} onClose={() => { setPassGuest(null); setPassToken('') }} />}</section>
 }
 
 function CheckInPage() {
