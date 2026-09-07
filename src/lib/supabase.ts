@@ -3,7 +3,18 @@ import { createClient } from '@supabase/supabase-js'
 const url = import.meta.env.VITE_SUPABASE_URL
 const publishableKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY
 
-export const supabase = url && publishableKey ? createClient(url, publishableKey) : null
+const authStorage = typeof window !== 'undefined' ? window.localStorage : undefined
+
+export const supabase = url && publishableKey
+  ? createClient(url, publishableKey, {
+      auth: {
+        persistSession: true,
+        autoRefreshToken: true,
+        detectSessionInUrl: true,
+        storage: authStorage,
+      },
+    })
+  : null
 
 export async function getEventMembers() {
   if (!supabase) return { data: [{ userId: 'demo-user', email: 'maria@rzevento.com', displayName: 'María Ríos', role: 'Administradora' }], error: null, demo: true }

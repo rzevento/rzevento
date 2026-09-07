@@ -172,7 +172,7 @@ function AdminLayout() {
   const [authenticated, setAuthenticated] = useState(false)
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const [organizer, setOrganizer] = useState({ displayName: 'Administrador', role: 'Administrador' })
-  const [localAuthenticated, setLocalAuthenticated] = useState(() => sessionStorage.getItem('rz-organizer-authenticated') === 'true')
+  const [localAuthenticated, setLocalAuthenticated] = useState(() => localStorage.getItem('rz-organizer-authenticated') === 'true')
   useEffect(() => {
     if (!supabase) {
       setAuthenticated(localAuthenticated)
@@ -185,10 +185,10 @@ function AdminLayout() {
     return () => listener.subscription.unsubscribe()
   }, [localAuthenticated])
   if (!sessionReady) return <div className="auth-loading">Cargando acceso…</div>
-  if (!authenticated) return <AdminLogin onLocalAuthenticated={() => { sessionStorage.setItem('rz-organizer-authenticated', 'true'); setLocalAuthenticated(true); setAuthenticated(true) }} />
+  if (!authenticated) return <AdminLogin onLocalAuthenticated={() => { localStorage.setItem('rz-organizer-authenticated', 'true'); setLocalAuthenticated(true); setAuthenticated(true) }} />
   const organizerInitials = organizer.displayName.split(' ').map(name => name[0]).slice(0, 2).join('').toUpperCase()
   const sentInvitations = guests.filter(guest => guest.invite === 'Enviada').length
-  return <div className={`admin-shell ${mobileNavOpen ? 'mobile-open' : ''}`}><aside className="sidebar"><div className="sidebar-brand"><Logo /><span>RZ EVENTOS</span></div><div className="event-switcher"><span>EVENTO ACTIVO</span><strong>Familias empresarias</strong><ChevronDown size={15} /></div><nav onClick={() => setMobileNavOpen(false)}><Link to="/admin" activeOptions={{ exact: true }} activeProps={{ className: 'active' }}><LayoutDashboard size={18} /> Resumen</Link><Link to="/admin/invitados" activeProps={{ className: 'active' }}><Users size={18} /> Invitados <b>{sentInvitations}</b></Link><Link to="/admin/check-in" activeProps={{ className: 'active' }}><CheckCircle2 size={18} /> Registro en evento</Link><Link to="/admin/configuracion" activeProps={{ className: 'active' }}><Settings2 size={18} /> Configuración</Link></nav><div className="sidebar-bottom"><div className="user-avatar">{organizerInitials}</div><div><strong>{organizer.displayName}</strong><small>{organizer.role}</small></div><button className="sidebar-logout" onClick={() => { sessionStorage.removeItem('rz-organizer-authenticated'); if (supabase) void supabase.auth.signOut(); else { setLocalAuthenticated(false); setAuthenticated(false) } }} aria-label="Cerrar sesión"><MoreHorizontal size={18} /></button></div></aside><main className="admin-main"><header className="admin-header"><button className="mobile-menu" onClick={() => setMobileNavOpen(current => !current)} aria-label="Abrir menú"><Menu size={20} /></button><div><p className="eyebrow">Martes 17 de noviembre de 2026</p><h1>Familias empresarias</h1></div><div className="header-actions"><button className="icon-button" onClick={() => downloadGuestCsv(guests)} aria-label="Descargar lista de invitados"><Download size={17} /></button><button className="button button-orange small" onClick={() => void navigate({ to: '/admin/invitados' })}><Send size={16} /> Nueva invitación</button></div></header><Outlet /></main></div>
+  return <div className={`admin-shell ${mobileNavOpen ? 'mobile-open' : ''}`}><aside className="sidebar"><div className="sidebar-brand"><Logo /><span>RZ EVENTOS</span></div><div className="event-switcher"><span>EVENTO ACTIVO</span><strong>Familias empresarias</strong><ChevronDown size={15} /></div><nav onClick={() => setMobileNavOpen(false)}><Link to="/admin" activeOptions={{ exact: true }} activeProps={{ className: 'active' }}><LayoutDashboard size={18} /> Resumen</Link><Link to="/admin/invitados" activeProps={{ className: 'active' }}><Users size={18} /> Invitados <b>{sentInvitations}</b></Link><Link to="/admin/check-in" activeProps={{ className: 'active' }}><CheckCircle2 size={18} /> Registro en evento</Link><Link to="/admin/configuracion" activeProps={{ className: 'active' }}><Settings2 size={18} /> Configuración</Link></nav><div className="sidebar-bottom"><div className="user-avatar">{organizerInitials}</div><div><strong>{organizer.displayName}</strong><small>{organizer.role}</small></div><button className="sidebar-logout" onClick={() => { localStorage.removeItem('rz-organizer-authenticated'); sessionStorage.removeItem('rz-organizer-authenticated'); if (supabase) void supabase.auth.signOut(); else { setLocalAuthenticated(false); setAuthenticated(false) } }} aria-label="Cerrar sesión"><MoreHorizontal size={18} /></button></div></aside><main className="admin-main"><header className="admin-header"><button className="mobile-menu" onClick={() => setMobileNavOpen(current => !current)} aria-label="Abrir menú"><Menu size={20} /></button><div><p className="eyebrow">Martes 17 de noviembre de 2026</p><h1>Familias empresarias</h1></div><div className="header-actions"><button className="icon-button" onClick={() => downloadGuestCsv(guests)} aria-label="Descargar lista de invitados"><Download size={17} /></button><button className="button button-orange small" onClick={() => void navigate({ to: '/admin/invitados' })}><Send size={16} /> Nueva invitación</button></div></header><Outlet /></main></div>
 }
 
 function AdminLogin({ onLocalAuthenticated }: { onLocalAuthenticated: () => void }) {
@@ -383,34 +383,52 @@ function CheckInPage() {
   const matches = search.length > 1 ? data.filter(g => `${g.name} ${g.email} ${g.phone} ${g.company}`.toLowerCase().includes(search.toLowerCase())) : []
   async function check(id: string) {
     setChecking(id)
-    const result = await checkInGuest(id)
-    setChecking(null)
-    if (!result.error) setChecked(current => current.includes(id) ? current : [...current, id])
+    try {
+      const result = await checkInGuest(id)
+      if (!result.error) setChecked(current => current.includes(id) ? current : [...current, id])
+      return result.error
+    } catch (error) {
+      return error instanceof Error ? error : new Error('No se pudo registrar la entrada')
+    } finally {
+      setChecking(null)
+    }
   }
   async function resolveQr(value: string) {
     setScannerError('')
-    const result = await findGuestByQr(value)
-    if (result.error || !result.data) { setScannerError('No encontramos una invitación con ese QR.'); return }
-    setScannerOpen(false)
-    setSearch(result.data.name)
-    if (!checked.includes(result.data.id)) await check(result.data.id)
+    try {
+      const result = await findGuestByQr(value)
+      if (result.error || !result.data) { setScannerError('No encontramos una invitación con ese QR.'); return }
+      setSearch(result.data.name || '')
+      if (!checked.includes(result.data.id)) {
+        const checkError = await check(result.data.id)
+        if (checkError) {
+          setScannerError('La invitación fue encontrada, pero no pudimos registrar la entrada. Inténtalo de nuevo.')
+          return
+        }
+      }
+      setScannerOpen(false)
+    } catch {
+      setScannerError('No pudimos procesar este QR. Verifica tu conexión e inténtalo de nuevo.')
+    }
   }
   return <section className="checkin-page"><div className="checkin-intro"><p className="eyebrow orange">Registro en evento</p><h2>Bienvenidos</h2><p className="muted">Busca a la persona invitada o escanea su código QR para registrar su llegada.</p></div><div className="checkin-tools"><div className="checkin-search"><Search size={24} /><input autoFocus value={search} onChange={e => setSearch(e.target.value)} placeholder="Escribe un nombre, correo o empresa..." /></div><button className="button button-orange scan-button" onClick={() => { setScannerError(''); setScannerOpen(true) }}><QrCode size={19} /> Escanear QR</button></div>{matches.length > 0 && <div className="checkin-results">{matches.map(g => <div className="checkin-result" key={g.id}><div className="table-avatar">{g.name.split(' ').map(n => n[0]).slice(0, 2).join('')}</div><div className="guest-name"><strong>{g.name}</strong><small>{g.company} · {g.origin}</small></div>{checked.includes(g.id) ? <span className="present"><CheckCircle2 size={17} /> Presente</span> : <button className="button button-orange small" disabled={checking === g.id} onClick={() => void check(g.id)}>{checking === g.id ? 'Guardando…' : 'Registrar entrada'}</button>}</div>)}</div>}<div className="checkin-event-card"><div className="event-date-block"><strong>17</strong><span>NOV<br />2026</span></div><div><p className="eyebrow">Evento de hoy</p><h3>{event.title} <span>{event.accent}</span></h3><p className="muted"><MapPin size={15} /> {event.venue} · {event.city}</p></div><div className="checkin-count"><strong>{checked.length}</strong><span>registrados</span></div></div>{scannerOpen && <QrScanner onClose={() => setScannerOpen(false)} onCode={resolveQr} error={scannerError} code={scanCode} setCode={setScanCode} />}</section>
 }
 
 function QrScanner({ onClose, onCode, error, code, setCode }: { onClose: () => void; onCode: (code: string) => void; error: string; code: string; setCode: (code: string) => void }) {
   const scannerRef = useRef<Html5Qrcode | null>(null)
+  const scanHandledRef = useRef(false)
   const [cameraError, setCameraError] = useState('')
   useEffect(() => {
     let active = true
     const scannerConfig = { fps: 15, qrbox: (viewfinderWidth: number, viewfinderHeight: number) => { const size = Math.floor(Math.min(viewfinderWidth, viewfinderHeight) * 0.72); return { width: size, height: size } }, aspectRatio: 1 }
     async function startScanner(scanner: Html5Qrcode, camera: { facingMode: string } | string) {
       await scanner.start(camera, scannerConfig, decodedText => {
-        if (!active) return
+        if (!active || scanHandledRef.current) return
+        scanHandledRef.current = true
         active = false
         void scanner.stop().catch(() => undefined).finally(() => {
-          scanner.clear()
-          onCode(decodedText)
+          try { scanner.clear() } catch { /* el lector ya pudo haberse limpiado */ }
+          void Promise.resolve().then(() => onCode(decodedText)).catch(() => undefined)
         })
       }, () => undefined)
     }
