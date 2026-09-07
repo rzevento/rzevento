@@ -259,12 +259,30 @@ function GuestsPage() {
       return
     }
     const imported = rows.filter(row => (emailIndex >= 0 && row[emailIndex]) || (phoneIndex >= 0 && row[phoneIndex])).map(row => ({ id: `csv-${crypto.randomUUID()}`, name: nameIndex >= 0 ? row[nameIndex] : '', email: emailIndex >= 0 ? row[emailIndex] : '', phone: phoneIndex >= 0 ? row[phoneIndex] : '', origin: originIndex >= 0 ? row[originIndex] : 'Sin origen', company: companyIndex >= 0 ? row[companyIndex] : 'Sin empresa', invite: 'Pendiente', status: 'Pendiente' as GuestStatus, checkedIn: false }))
+    const normalizeEmail = (value: string) => value.trim().toLowerCase()
+    const normalizePhone = (value: string) => value.replace(/\D/g, '')
+    const existingEmails = new Set(data.map(guest => normalizeEmail(guest.email)).filter(Boolean))
+    const existingPhones = new Set(data.map(guest => normalizePhone(guest.phone)).filter(Boolean))
+    const seenEmails = new Set<string>()
+    const seenPhones = new Set<string>()
+    const newImported = imported.filter(guest => {
+      const email = normalizeEmail(guest.email)
+      const phone = normalizePhone(guest.phone)
+      const duplicate = (email && (existingEmails.has(email) || seenEmails.has(email))) || (phone && (existingPhones.has(phone) || seenPhones.has(phone)))
+      if (email) seenEmails.add(email)
+      if (phone) seenPhones.add(phone)
+      return !duplicate
+    })
+    const skipped = imported.length - newImported.length
     if (imported.length === 0) window.alert('No encontré filas válidas. Cada invitado necesita nombre y correo o celular.')
+    else if (newImported.length === 0) window.alert('Todos los contactos de este archivo ya están registrados.')
     else if (supabase) {
-      const results = await Promise.all(imported.map(guest => createGuest({ name: guest.name, email: guest.email, phone: guest.phone, origin: guest.origin, company: guest.company })))
-      if (results.some(result => result.error)) window.alert('Algunas filas no pudieron guardarse. Revisa los correos duplicados.')
+      const results = await Promise.all(newImported.map(guest => createGuest({ name: guest.name, email: guest.email, phone: guest.phone, origin: guest.origin, company: guest.company })))
+      const failed = results.filter(result => result.error)
+      if (failed.length) window.alert(`${failed.length} fila(s) no pudieron guardarse. ${skipped ? `${skipped} duplicada(s) fueron omitidas. ` : ''}${failed[0].error?.message || ''}`)
+      else if (skipped) window.alert(`${newImported.length} invitación(es) cargadas. ${skipped} contacto(s) duplicado(s) fueron omitidos.`)
       await queryClient.invalidateQueries({ queryKey: ['guests'] })
-    } else queryClient.setQueryData<Guest[]>(['guests'], current => [...(current || demoGuests), ...imported])
+    } else queryClient.setQueryData<Guest[]>(['guests'], current => [...(current || demoGuests), ...newImported])
     e.target.value = ''
   }
   const count = (status: GuestStatus) => data.filter(g => g.status === status).length
