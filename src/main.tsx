@@ -258,7 +258,7 @@ function GuestsPage() {
       e.target.value = ''
       return
     }
-    const imported = rows.filter(row => row[nameIndex] && ((emailIndex >= 0 && row[emailIndex]) || (phoneIndex >= 0 && row[phoneIndex]))).map(row => ({ id: `csv-${crypto.randomUUID()}`, name: row[nameIndex], email: emailIndex >= 0 ? row[emailIndex] : '', phone: phoneIndex >= 0 ? row[phoneIndex] : '', origin: originIndex >= 0 ? row[originIndex] : 'Sin origen', company: companyIndex >= 0 ? row[companyIndex] : 'Sin empresa', invite: 'Pendiente', status: 'Pendiente' as GuestStatus, checkedIn: false }))
+    const imported = rows.filter(row => (emailIndex >= 0 && row[emailIndex]) || (phoneIndex >= 0 && row[phoneIndex])).map(row => ({ id: `csv-${crypto.randomUUID()}`, name: nameIndex >= 0 ? row[nameIndex] : '', email: emailIndex >= 0 ? row[emailIndex] : '', phone: phoneIndex >= 0 ? row[phoneIndex] : '', origin: originIndex >= 0 ? row[originIndex] : 'Sin origen', company: companyIndex >= 0 ? row[companyIndex] : 'Sin empresa', invite: 'Pendiente', status: 'Pendiente' as GuestStatus, checkedIn: false }))
     if (imported.length === 0) window.alert('No encontré filas válidas. Cada invitado necesita nombre y correo o celular.')
     else if (supabase) {
       const results = await Promise.all(imported.map(guest => createGuest({ name: guest.name, email: guest.email, phone: guest.phone, origin: guest.origin, company: guest.company })))
