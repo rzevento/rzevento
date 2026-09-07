@@ -84,7 +84,9 @@
 .public-shell:has(.information-page) .public-nav .brand { color: #241f1a; }
 .public-shell:has(.information-page) .public-menu > a { color: #766d63; }
 .public-shell:has(.information-page) .public-menu > a:hover,
-.public-shell:has(.information-page) .public-menu > a.active { color: var(--orange-dark); }
+.public-shell:has(.information-page) .public-menu > a.active { color: #8f4100; background: #f3d8bd; }
+.public-menu > a { transition: color .2s ease, background-color .2s ease; border-radius: 999px; padding: 8px 11px; }
+.public-menu > a:focus-visible { outline: 2px solid var(--orange); outline-offset: 3px; }
 .information-page { max-width: none; padding-left: max(6vw, calc((100vw - 1120px) / 2)); padding-right: max(6vw, calc((100vw - 1120px) / 2)); background: #f2eee8; color: #241f1a; }
 .information-page .information-hero { border-color: #d8d0c5; }
 .information-page .information-lead,

@@ -43,7 +43,7 @@ const guestQuery = async (): Promise<Guest[]> => {
     const rsvp = Array.isArray(guest.rsvps) ? guest.rsvps[0] : guest.rsvps
     const checkIn = Array.isArray(guest.check_ins) ? guest.check_ins[0] : guest.check_ins
     const status: GuestStatus = rsvp?.status === 'confirmed' ? 'Confirmado' : rsvp?.status === 'cancelled' || rsvp?.status === 'declined' ? 'Canceló' : 'Pendiente'
-    return { id: String(guest.id), name: guest.full_name, company: guest.company || 'Sin empresa', email: guest.email || '', phone: guest.phone || '', origin: guest.origin || 'Sin origen', invite: invitation?.status === 'sent' ? 'Enviada' : 'Pendiente', status, checkedIn: Boolean(checkIn) }
+    return { id: String(guest.id), name: guest.full_name || 'Invitado pendiente', company: guest.company || 'Sin empresa', email: guest.email || '', phone: guest.phone || '', origin: guest.origin || 'Sin origen', invite: invitation?.status === 'sent' ? 'Enviada' : 'Pendiente', status, checkedIn: Boolean(checkIn) }
   })
 }
 
@@ -183,11 +183,11 @@ function NewGuestModal({ onClose }: { onClose: () => void }) {
     const result = await createGuest(form)
     setSaving(false)
     if (result.error) { setError('No se pudo guardar al invitado.'); return }
-    if (result.demo) queryClient.setQueryData<Guest[]>(['guests'], current => [...(current || demoGuests), { id: `demo-${Date.now()}`, name: form.name, company: form.company || 'Sin empresa', email: form.email, phone: form.phone, origin: form.origin, invite: 'Pendiente', status: 'Pendiente', checkedIn: false }])
+    if (result.demo) queryClient.setQueryData<Guest[]>(['guests'], current => [...(current || demoGuests), { id: `demo-${Date.now()}`, name: form.name || 'Invitado pendiente', company: 'Sin empresa', email: form.email, phone: form.phone, origin: 'Sin origen', invite: 'Pendiente', status: 'Pendiente', checkedIn: false }])
     else await queryClient.invalidateQueries({ queryKey: ['guests'] })
     onClose()
   }
-  return <div className="modal-backdrop" onMouseDown={onClose}><div className="modal-card" onMouseDown={e => e.stopPropagation()}><button className="modal-close" onClick={onClose} aria-label="Cerrar">×</button><p className="eyebrow orange">Nueva invitación</p><h2>Agregar invitado</h2><p className="muted">Se creará un enlace único para esta persona.</p><form onSubmit={save}><label>Nombre completo<input required value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></label><label>Correo electrónico <small>(opcional si registras celular)</small><input type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} /></label><div className="two-fields"><label>Celular <small>(opcional si registras correo)</small><input value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} /></label><label>Empresa<input value={form.company} onChange={e => setForm({ ...form, company: e.target.value })} /></label></div><label>Ciudad o procedencia<input required value={form.origin} onChange={e => setForm({ ...form, origin: e.target.value })} /></label>{error && <p className="form-error">{error}</p>}<button className="button button-orange" disabled={saving}>{saving ? 'Guardando…' : 'Crear invitación'} <ArrowRight size={16} /></button></form></div></div>
+  return <div className="modal-backdrop" onMouseDown={onClose}><div className="modal-card" onMouseDown={e => e.stopPropagation()}><button className="modal-close" onClick={onClose} aria-label="Cerrar">×</button><p className="eyebrow orange">Nueva invitación</p><h2>Agregar invitado</h2><p className="muted">Captura el correo o celular con el que fue invitado. El nombre puede completarse después.</p><form onSubmit={save}><label>Nombre completo <small>(opcional)</small><input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="Si ya lo tienes" /></label><label>Correo electrónico <small>(opcional si registras celular)</small><input type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} placeholder="nombre@empresa.com" /></label><label>Celular <small>(opcional si registras correo)</small><input value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} placeholder="10 dígitos" /></label>{error && <p className="form-error">{error}</p>}<button className="button button-orange" disabled={saving}>{saving ? 'Guardando…' : 'Crear invitación'} <ArrowRight size={16} /></button></form></div></div>
 }
 
 function GuestsPage() {
@@ -208,20 +208,56 @@ function GuestsPage() {
     anchor.click()
     URL.revokeObjectURL(url)
   }
+  function parseCsv(source: string) {
+    const normalized = source.replace(/^\uFEFF/, '')
+    const firstLine = normalized.split(/\r?\n/, 1)[0] || ''
+    const commaCount = (firstLine.match(/,/g) || []).length
+    const semicolonCount = (firstLine.match(/;/g) || []).length
+    const delimiter = semicolonCount > commaCount ? ';' : ','
+    const rows: string[][] = []
+    let row: string[] = []
+    let cell = ''
+    let quoted = false
+    for (let index = 0; index < normalized.length; index += 1) {
+      const character = normalized[index]
+      const next = normalized[index + 1]
+      if (character === '"' && quoted && next === '"') { cell += '"'; index += 1; continue }
+      if (character === '"') { quoted = !quoted; continue }
+      if (character === delimiter && !quoted) { row.push(cell.trim()); cell = ''; continue }
+      if ((character === '\n' || character === '\r') && !quoted) {
+        if (character === '\r' && next === '\n') index += 1
+        row.push(cell.trim())
+        if (row.some(Boolean)) rows.push(row)
+        row = []
+        cell = ''
+        continue
+      }
+      cell += character
+    }
+    if (cell || row.length) { row.push(cell.trim()); if (row.some(Boolean)) rows.push(row) }
+    return rows
+  }
+  function normalizeHeader(value: string) {
+    return value.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]/g, '')
+  }
   async function importCsv(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     if (!file) return
-    const text = await file.text()
-    const rows = text.split(/\r?\n/).map(row => row.split(',').map(cell => cell.trim().replace(/^"|"$/g, ''))).filter(row => row.length >= 2 && row.some(Boolean))
-    const header = rows.shift()?.map(cell => cell.toLowerCase()) || []
-    const indexOf = (...names: string[]) => names.map(name => header.indexOf(name)).find(index => index >= 0) ?? -1
+    const rows = parseCsv(await file.text())
+    const header = rows.shift()?.map(normalizeHeader) || []
+    const indexOf = (...names: string[]) => names.map(normalizeHeader).map(name => header.indexOf(name)).find(index => index >= 0) ?? -1
     const nameIndex = indexOf('name', 'nombre', 'nombre completo')
     const emailIndex = indexOf('email', 'correo', 'correo electrónico')
-    const phoneIndex = indexOf('phone', 'teléfono', 'telefono')
+    const phoneIndex = indexOf('phone', 'teléfono', 'telefono', 'celular', 'movil')
     const originIndex = indexOf('origin', 'procedencia', 'ciudad', 'de dónde vienes')
     const companyIndex = indexOf('company', 'empresa')
+    if (nameIndex < 0 || (emailIndex < 0 && phoneIndex < 0)) {
+      window.alert('El archivo debe incluir una columna Nombre y una columna Correo o Celular.')
+      e.target.value = ''
+      return
+    }
     const imported = rows.filter(row => row[nameIndex] && ((emailIndex >= 0 && row[emailIndex]) || (phoneIndex >= 0 && row[phoneIndex]))).map(row => ({ id: `csv-${crypto.randomUUID()}`, name: row[nameIndex], email: emailIndex >= 0 ? row[emailIndex] : '', phone: phoneIndex >= 0 ? row[phoneIndex] : '', origin: originIndex >= 0 ? row[originIndex] : 'Sin origen', company: companyIndex >= 0 ? row[companyIndex] : 'Sin empresa', invite: 'Pendiente', status: 'Pendiente' as GuestStatus, checkedIn: false }))
-    if (imported.length === 0) window.alert('El CSV debe incluir nombre y correo o celular.')
+    if (imported.length === 0) window.alert('No encontré filas válidas. Cada invitado necesita nombre y correo o celular.')
     else if (supabase) {
       const results = await Promise.all(imported.map(guest => createGuest({ name: guest.name, email: guest.email, phone: guest.phone, origin: guest.origin, company: guest.company })))
       if (results.some(result => result.error)) window.alert('Algunas filas no pudieron guardarse. Revisa los correos duplicados.')

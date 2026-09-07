@@ -41,7 +41,7 @@ export async function createGuest(input: { name: string; email: string; phone: s
   if (!supabase) return { data: null, error: null, demo: true }
   const { data: activeEvent, error: eventError } = await supabase.from('events').select('id').order('created_at', { ascending: false }).limit(1).maybeSingle()
   if (eventError || !activeEvent) return { data: null, error: eventError || new Error('No active event'), demo: false }
-  const { data: guest, error } = await supabase.from('guests').insert({ event_id: activeEvent.id, full_name: input.name, email: input.email.trim() || null, phone: input.phone.trim() || null, origin: input.origin, company: input.company }).select().single()
+  const { data: guest, error } = await supabase.from('guests').insert({ event_id: activeEvent.id, full_name: input.name.trim() || null, email: input.email.trim() || null, phone: input.phone.trim() || null, origin: input.origin.trim() || null, company: input.company.trim() || null }).select().single()
   if (error || !guest) return { data: null, error, demo: false }
   const invitation = await supabase.from('invitations').insert({ event_id: activeEvent.id, guest_id: guest.id }).select().single()
   return { data: { guest, invitation: invitation.data }, error: invitation.error, demo: false }
