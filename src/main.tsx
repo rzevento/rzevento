@@ -3,6 +3,8 @@ import { createRoot } from 'react-dom/client'
 import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query'
 import { createRootRoute, createRoute, createRouter, Link, Outlet, RouterProvider, useNavigate, useParams } from '@tanstack/react-router'
 import { AlertCircle, ArrowRight, CalendarDays, Camera, Check, CheckCircle2, ChevronDown, Clock3, Download, Eye, EyeOff, Filter, LayoutDashboard, LockKeyhole, MapPin, Menu, MoreHorizontal, QrCode, Search, Send, Settings2, ShieldCheck, Upload, Users, X } from 'lucide-react'
+import { jsPDF } from 'jspdf'
+import QRCode from 'qrcode'
 import { addEventMember, beginRsvp, cancelRsvp, checkInGuest, createGuest, findGuestByQr, getCurrentOrganizerProfile, getEventMembers, sendInvitation, submitRsvp, supabase } from './lib/supabase'
 import './styles.css'
 
@@ -58,11 +60,12 @@ function RegistrationPage({ token = 'demo' }: { token?: string }) {
   const [resolvedToken, setResolvedToken] = useState(directToken)
   const [sent, setSent] = useState(false)
   const [cancelled, setCancelled] = useState(false)
+  const [alreadyRegistered, setAlreadyRegistered] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
   const [form, setForm] = useState({ name: '', email: '', phone: '', origin: '' })
   const update = (key: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) => setForm({ ...form, [key]: e.target.value })
-  if (sent) return <main className="register-page success-page"><div className="success-card"><div className="success-icon">{cancelled ? <span>×</span> : <Check size={25} />}</div><p className="eyebrow">{cancelled ? 'Asistencia cancelada' : 'Registro recibido'}</p><h1>{cancelled ? 'Tu cancelación quedó registrada.' : `Gracias, ${form.name.split(' ')[0] || 'por confirmar'}.`}</h1><p>{cancelled ? 'Si cambias de opinión, puedes volver a confirmar desde este mismo enlace.' : 'Tu lugar para la conferencia está apartado. Te esperamos el martes 17 de noviembre en Hyatt Regency Andares.'}</p>{!cancelled && <><div className="success-details"><CalendarDays size={18} /><span>{event.date}<br /><small>{event.time}</small></span></div><p className="pass-note"><ShieldCheck size={15} /> {form.email ? 'También recibirás tu entrada por correo.' : 'Si registraste un correo, también recibirás tu entrada por ahí.'} No es necesario imprimirla; puedes mostrarla desde tu celular.</p></>}<div className="success-actions">{!cancelled && <><button className="button button-orange" onClick={downloadPass}><Download size={16} /> Descargar entrada</button><Link className="outline-button" to="/informacion">Ver más sobre el evento <ArrowRight size={15} /></Link></>}<Link className="button button-dark" to="/">Volver al inicio</Link>{!cancelled && <button className="cancel-link" onClick={() => { void cancelRsvp(resolvedToken || token).then(result => { if (!result.error) setCancelled(true) }) }}>Ya no podré asistir</button>}</div></div></main>
+  if (sent) return <main className="register-page success-page"><div className="success-card"><div className="success-icon">{cancelled ? <span>×</span> : <Check size={25} />}</div><p className="eyebrow">{cancelled ? 'Asistencia cancelada' : alreadyRegistered ? 'Asistencia confirmada' : 'Registro recibido'}</p><h1>{cancelled ? 'Tu cancelación quedó registrada.' : alreadyRegistered ? 'Tu asistencia ya está confirmada.' : `Gracias, ${form.name.split(' ')[0] || 'por confirmar'}.`}</h1><p>{cancelled ? 'Si cambias de opinión, puedes volver a confirmar desde este mismo enlace.' : alreadyRegistered ? 'Puedes descargar tu entrada o cancelar tu asistencia desde aquí.' : 'Tu lugar para la conferencia está apartado. Te esperamos el martes 17 de noviembre en Hyatt Regency Andares.'}</p>{!cancelled && <><div className="success-details"><CalendarDays size={18} /><span>{event.date}<br /><small>{event.time}</small></span></div><p className="pass-note"><ShieldCheck size={15} /> {form.email ? 'También recibirás tu entrada por correo.' : 'Si registraste un correo, también recibirás tu entrada por ahí.'} No es necesario imprimirla; puedes mostrarla desde tu celular.</p></>}<div className="success-actions">{!cancelled && <><button className="button button-orange" onClick={() => void downloadPass()}><Download size={16} /> Descargar entrada</button><Link className="outline-button" to="/informacion">Ver más sobre el evento <ArrowRight size={15} /></Link></>}{!cancelled && <button className="cancel-link" onClick={() => { void cancelRsvp(resolvedToken || token).then(result => { if (!result.error) setCancelled(true) }) }}>Ya no podré asistir</button>}</div></div></main>
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
     if (!form.email.trim() && !form.phone.trim()) {
@@ -75,7 +78,14 @@ function RegistrationPage({ token = 'demo' }: { token?: string }) {
     if (!currentToken) {
       const lookup = await beginRsvp(form.email || form.phone)
       if (lookup.error) { setSubmitting(false); setError('No encontramos ese correo o celular en la lista de invitados.'); return }
-      if (lookup.data?.status === 'already_registered') { setSubmitting(false); setError('Este invitado ya está registrado.'); return }
+      if (lookup.data?.status === 'already_registered') {
+        currentToken = lookup.data.token || ''
+        setResolvedToken(currentToken)
+        setAlreadyRegistered(true)
+        setSubmitting(false)
+        setSent(true)
+        return
+      }
       currentToken = lookup.data?.token || ''
       setResolvedToken(currentToken)
     }
@@ -87,15 +97,45 @@ function RegistrationPage({ token = 'demo' }: { token?: string }) {
     }
     setSent(true)
   }
-  function downloadPass() {
-    const escapeHtml = (value: string) => value.replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' })[character] || character)
-    const pass = `<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Entrada personal · RZ Eventos</title><style>body{font-family:Arial,sans-serif;background:#f2eee8;color:#241f1a;padding:40px}.pass{max-width:520px;margin:auto;background:#fffdf9;padding:40px;border-top:6px solid #ff7600}h1{font-size:32px}h1 span{color:#c75a00}.code{margin:28px 0;padding:18px;background:#efe7dd;font-family:monospace;word-break:break-all}small{color:#81786e}</style></head><body><article class="pass"><p style="color:#c75a00;letter-spacing:3px;font-weight:bold">RZ EVENTOS</p><h1>Entrada personal<br><span>Familias empresarias</span></h1><p><strong>${escapeHtml(form.name)}</strong></p><p>${event.date}<br>${event.time}<br>${event.venue} · ${event.city}</p><div class="code">Código de acceso: ${escapeHtml(resolvedToken || token)}</div><small>Esta entrada es personal e intransferible. No es necesario imprimirla; puedes mostrarla desde tu celular.</small></article></body></html>`
-    const url = URL.createObjectURL(new Blob([pass], { type: 'text/html;charset=utf-8' }))
-    const anchor = document.createElement('a')
-    anchor.href = url
-    anchor.download = 'entrada-personal-rz-eventos.html'
-    anchor.click()
-    URL.revokeObjectURL(url)
+  async function downloadPass() {
+    const accessToken = resolvedToken || token
+    const qrDataUrl = await QRCode.toDataURL(accessToken, { width: 460, margin: 1, color: { dark: '#241f1a', light: '#fffdf9' } })
+    const pdf = new jsPDF({ unit: 'mm', format: 'a4' })
+    const pageWidth = pdf.internal.pageSize.getWidth()
+    pdf.setFillColor(246, 242, 236)
+    pdf.rect(0, 0, pageWidth, 297, 'F')
+    pdf.setFillColor(255, 253, 249)
+    pdf.rect(18, 18, pageWidth - 36, 261, 'F')
+    pdf.setFillColor(255, 118, 0)
+    pdf.rect(18, 18, pageWidth - 36, 3, 'F')
+    pdf.setTextColor(199, 90, 0)
+    pdf.setFont('helvetica', 'bold')
+    pdf.setFontSize(16)
+    pdf.text('RZ EVENTOS', 30, 42)
+    pdf.setTextColor(36, 31, 26)
+    pdf.setFontSize(27)
+    pdf.text('Entrada personal', 30, 61)
+    pdf.setTextColor(199, 90, 0)
+    pdf.text('Familias empresarias', 30, 75)
+    pdf.setTextColor(36, 31, 26)
+    pdf.setFontSize(23)
+    pdf.text(form.name || 'Invitado', 30, 98)
+    pdf.setFont('helvetica', 'normal')
+    pdf.setFontSize(13)
+    pdf.text(event.date, 30, 114)
+    pdf.text(`${event.time} · ${event.venue}`, 30, 123)
+    pdf.text(event.city, 30, 132)
+    pdf.addImage(qrDataUrl, 'PNG', 30, 153, 58, 58)
+    pdf.setFont('helvetica', 'bold')
+    pdf.setFontSize(12)
+    pdf.text('Presenta este QR en el acceso', 100, 174)
+    pdf.setFont('helvetica', 'normal')
+    pdf.setFontSize(11)
+    pdf.setTextColor(129, 120, 110)
+    pdf.text('Esta entrada es personal e intransferible.', 100, 184)
+    pdf.text('También llegará por correo. No es necesario imprimirla;', 100, 193)
+    pdf.text('puedes mostrarla desde tu celular.', 100, 202)
+    pdf.save('entrada-personal-rz-eventos.pdf')
   }
   return <main className="register-page"><section className="register-intro"><div className="circle circle-one"></div><div className="circle circle-two"></div><Logo /><p className="eyebrow">{event.eyebrow}</p><h1>{event.title} <span>{event.accent}</span></h1><div className="line"></div><p className="intro-copy">Una conversación para quienes construyen empresas que trascienden generaciones.</p><div className="event-meta"><div><CalendarDays size={19} /><span>{event.date}<small>{event.time}</small></span></div><div><MapPin size={19} /><span>{event.venue}<small>{event.city}</small></span></div></div></section><section className="register-card"><div className="card-top"><p className="eyebrow">Evento exclusivo por invitación</p><h2>Confirma tu asistencia</h2><div className="invitation-notices"><p><ShieldCheck size={15} /> Ingresa el correo o celular con el que fuiste invitado.</p><p><LockKeyhole size={15} /> Esta invitación es personal e intransferible.</p></div><p>Completa tus datos para reservar tu lugar.</p></div><form onSubmit={handleSubmit}><label>Nombre completo<input required value={form.name} onChange={update('name')} placeholder="Tu nombre" /></label><label>Correo electrónico<input type="email" value={form.email} onChange={update('email')} placeholder="nombre@empresa.com" /></label><label>Celular<input type="tel" value={form.phone} onChange={update('phone')} placeholder="10 dígitos" /></label><label>Empresa<input required value={form.origin} onChange={update('origin')} placeholder="Nombre de la empresa" /></label>{error && <p className="form-error">{error}</p>}<button className="button button-orange" type="submit" disabled={submitting}>{submitting ? 'Guardando…' : 'Confirmar asistencia'} {!submitting && <ArrowRight size={17} />}</button></form><p className="privacy-note"><ShieldCheck size={15} /> Tus datos se utilizarán únicamente para la organización del evento.</p></section></main>
 }
@@ -204,7 +244,12 @@ function NewGuestModal({ onClose }: { onClose: () => void }) {
     setSaving(true)
     const result = await createGuest(form)
     setSaving(false)
-    if (result.error) { setError('No se pudo guardar al invitado.'); return }
+    if (result.error) {
+      const errorCode = 'code' in result.error ? result.error.code : ''
+      const isDuplicate = errorCode === '23505' || /duplicate key|unique constraint|guests_event_(email|phone)_key/i.test(result.error.message || '')
+      setError(isDuplicate ? 'No se pudo guardar al invitado porque el correo o celular ya está en la lista.' : 'No se pudo guardar al invitado. Intenta nuevamente.')
+      return
+    }
     if (result.demo) queryClient.setQueryData<Guest[]>(['guests'], current => [...(current || demoGuests), { id: `demo-${Date.now()}`, name: form.name || 'Invitado pendiente', company: 'Sin empresa', email: form.email, phone: form.phone, origin: 'Sin origen', invite: 'Pendiente', status: 'Pendiente', checkedIn: false }])
     else await queryClient.invalidateQueries({ queryKey: ['guests'] })
     onClose()
