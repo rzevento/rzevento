@@ -5,8 +5,25 @@ const publishableKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY
 
 export const supabase = url && publishableKey ? createClient(url, publishableKey) : null
 
+export async function getEventMembers() {
+  if (!supabase) return { data: [{ userId: 'demo-user', email: 'maria@rzevento.com', displayName: 'María Ríos', role: 'Administradora' }], error: null, demo: true }
+  const { data: activeEvent, error: eventError } = await supabase.from('events').select('id').order('created_at', { ascending: false }).limit(1).maybeSingle()
+  if (eventError || !activeEvent) return { data: [], error: eventError || new Error('No active event'), demo: false }
+  const { data, error } = await supabase.from('event_members').select('user_id, email, display_name, role').eq('event_id', activeEvent.id).order('created_at')
+  const roleLabels: Record<string, string> = { admin: 'Administrador', staff: 'Equipo', viewer: 'Consulta' }
+  return { data: (data || []).map(member => ({ userId: member.user_id, email: member.email || 'Sin correo', displayName: member.display_name || 'Usuario sin nombre', role: roleLabels[member.role] || member.role })), error, demo: false }
+}
+
+export async function addEventMember(input: { email: string; displayName: string; role: string }) {
+  if (!supabase) return { data: null, error: null, demo: true }
+  const { data: activeEvent, error: eventError } = await supabase.from('events').select('id').order('created_at', { ascending: false }).limit(1).maybeSingle()
+  if (eventError || !activeEvent) return { data: null, error: eventError || new Error('No active event'), demo: false }
+  const { data, error } = await supabase.rpc('add_event_member', { target_event_id: activeEvent.id, member_email: input.email, member_display_name: input.displayName, member_role: input.role })
+  return { data, error, demo: false }
+}
+
 export async function getCurrentOrganizerProfile() {
-  if (!supabase) return { data: { displayName: 'María Ríos', role: 'Organizadora' }, error: null, demo: true }
+  if (!supabase) return { data: { displayName: 'María Ríos', role: 'Administradora' }, error: null, demo: true }
   const { data: authData, error: authError } = await supabase.auth.getUser()
   if (authError || !authData.user) return { data: null, error: authError || new Error('No authenticated user'), demo: false }
   const { data: activeEvent, error: eventError } = await supabase.from('events').select('id').order('created_at', { ascending: false }).limit(1).maybeSingle()
@@ -15,7 +32,7 @@ export async function getCurrentOrganizerProfile() {
   if (error || !member) return { data: null, error: error || new Error('User is not an event member'), demo: false }
   const metadataName = authData.user.user_metadata?.full_name || authData.user.user_metadata?.name
   const displayName = member.display_name?.trim() || metadataName || authData.user.email?.split('@')[0] || 'Organizador'
-  const roleLabels: Record<string, string> = { organizer: 'Organizador', admin: 'Administrador', staff: 'Equipo', viewer: 'Consulta' }
+  const roleLabels: Record<string, string> = { admin: 'Administrador', staff: 'Equipo', viewer: 'Consulta' }
   return { data: { displayName, role: roleLabels[member.role] || member.role }, error: null, demo: false }
 }
 
