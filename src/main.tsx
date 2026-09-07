@@ -5,6 +5,7 @@ import { createRootRoute, createRoute, createRouter, Link, Outlet, RouterProvide
 import { AlertCircle, ArrowRight, CalendarDays, Camera, Check, CheckCircle2, ChevronDown, Clock3, Download, Eye, EyeOff, Filter, LayoutDashboard, LockKeyhole, MapPin, Menu, MoreHorizontal, QrCode, Search, Send, Settings2, ShieldCheck, Upload, Users, X } from 'lucide-react'
 import { jsPDF } from 'jspdf'
 import QRCode from 'qrcode'
+import { Html5Qrcode } from 'html5-qrcode'
 import { addEventMember, beginRsvp, cancelRsvp, checkInGuest, createGuest, findGuestByQr, getCurrentOrganizerProfile, getEventMembers, sendInvitation, submitRsvp, supabase } from './lib/supabase'
 import './styles.css'
 
@@ -104,7 +105,7 @@ function RegistrationPage({ token = 'demo' }: { token?: string }) {
   }
   async function downloadPass() {
     const accessToken = resolvedToken || token
-    const qrDataUrl = await QRCode.toDataURL(accessToken, { width: 460, margin: 1, color: { dark: '#241f1a', light: '#fffdf9' } })
+    const qrDataUrl = await QRCode.toDataURL(accessToken, { errorCorrectionLevel: 'H', width: 900, margin: 4, color: { dark: '#241f1a', light: '#fffdf9' } })
     const pdf = new jsPDF({ unit: 'mm', format: 'a4' })
     const pageWidth = pdf.internal.pageSize.getWidth()
     pdf.setFillColor(246, 242, 236)
@@ -133,13 +134,11 @@ function RegistrationPage({ token = 'demo' }: { token?: string }) {
     pdf.addImage(qrDataUrl, 'PNG', 30, 153, 58, 58)
     pdf.setFont('helvetica', 'bold')
     pdf.setFontSize(12)
-    pdf.text('Presenta este QR en el acceso', 100, 174)
+    pdf.text(pdf.splitTextToSize('Presenta este QR en el acceso', 82), 100, 174)
     pdf.setFont('helvetica', 'normal')
     pdf.setFontSize(11)
     pdf.setTextColor(129, 120, 110)
-    pdf.text('Esta entrada es personal e intransferible.', 100, 184)
-    pdf.text('También llegará por correo. No es necesario imprimirla;', 100, 193)
-    pdf.text('puedes mostrarla desde tu celular.', 100, 202)
+    pdf.text(pdf.splitTextToSize('Esta entrada es personal e intransferible. También llegará por correo. No es necesario imprimirla; puedes mostrarla desde tu celular.', 82), 100, 187, { lineHeightFactor: 1.55 })
     pdf.save('entrada-personal-rz-eventos.pdf')
   }
   return <main className="register-page"><section className="register-intro"><div className="circle circle-one"></div><div className="circle circle-two"></div><Logo /><p className="eyebrow">{event.eyebrow}</p><h1>{event.title} <span>{event.accent}</span></h1><div className="line"></div><p className="intro-copy">Una conversación para quienes construyen empresas que trascienden generaciones.</p><div className="event-meta"><div><CalendarDays size={19} /><span>{event.date}<small>{event.time}</small></span></div><div><MapPin size={19} /><span>{event.venue}<small>{event.city}</small></span></div></div></section><section className="register-card"><div className="card-top"><p className="eyebrow">Evento exclusivo por invitación</p><h2>Confirma tu asistencia</h2><div className="invitation-notices"><p><ShieldCheck size={15} /> Ingresa el correo o celular con el que fuiste invitado.</p><p><LockKeyhole size={15} /> Esta invitación es personal e intransferible.</p></div><p>Completa tus datos para reservar tu lugar.</p></div><form onSubmit={handleSubmit}><label>Nombre completo<input value={form.name} onChange={update('name')} placeholder="Tu nombre" /></label><label>Correo electrónico<input type="email" value={form.email} onChange={update('email')} placeholder="nombre@empresa.com" /></label><label>Celular<input type="tel" value={form.phone} onChange={update('phone')} placeholder="10 dígitos" /></label><label>Empresa<input value={form.origin} onChange={update('origin')} placeholder="Nombre de la empresa" /></label>{error && <p className="form-error">{error}</p>}<button className="button button-orange" type="submit" disabled={submitting}>{submitting ? 'Guardando…' : 'Confirmar asistencia'} {!submitting && <ArrowRight size={17} />}</button></form><p className="privacy-note"><ShieldCheck size={15} /> Tus datos se utilizarán únicamente para la organización del evento.</p></section></main>
@@ -386,28 +385,31 @@ function CheckInPage() {
 }
 
 function QrScanner({ onClose, onCode, error, code, setCode }: { onClose: () => void; onCode: (code: string) => void; error: string; code: string; setCode: (code: string) => void }) {
-  const videoRef = useRef<HTMLVideoElement>(null)
+  const scannerRef = useRef<Html5Qrcode | null>(null)
   const [cameraError, setCameraError] = useState('')
   useEffect(() => {
-    let stream: MediaStream | undefined
-    let timer: number | undefined
     let active = true
     async function start() {
-      if (!('BarcodeDetector' in window)) { setCameraError('Tu navegador no admite escaneo desde cámara. Usa el código manual abajo.'); return }
       try {
-        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } }, audio: false })
-        if (!videoRef.current) return
-        videoRef.current.srcObject = stream
-        await videoRef.current.play()
-        const detector = new window.BarcodeDetector({ formats: ['qr_code'] })
-        const scan = async () => { if (!active || !videoRef.current) return; const codes = await detector.detect(videoRef.current); if (codes[0]?.rawValue) { active = false; onCode(codes[0].rawValue) } else timer = window.setTimeout(scan, 250) }
-        void scan()
+        const scanner = new Html5Qrcode('qr-reader')
+        scannerRef.current = scanner
+        await scanner.start({ facingMode: 'environment' }, { fps: 10, qrbox: { width: 250, height: 250 }, aspectRatio: 1 }, decodedText => {
+          if (!active) return
+          active = false
+          void scanner.stop().catch(() => undefined)
+          onCode(decodedText)
+        }, () => undefined)
       } catch { setCameraError('No pudimos abrir la cámara. Revisa el permiso o usa el código manual.') }
     }
     void start()
-    return () => { active = false; if (timer) window.clearTimeout(timer); stream?.getTracks().forEach(track => track.stop()) }
+    return () => {
+      active = false
+      const scanner = scannerRef.current
+      scannerRef.current = null
+      if (scanner) void scanner.stop().catch(() => undefined)
+    }
   }, [])
-  return <div className="modal-backdrop scanner-backdrop"><div className="scanner-card"><button className="modal-close" onClick={onClose} aria-label="Cerrar escáner"><X size={19} /></button><div className="scanner-heading"><QrCode size={22} /><div><p className="eyebrow orange">Registro rápido</p><h3>Escanea el QR de la invitación</h3></div></div><div className="scanner-viewport">{cameraError ? <div className="scanner-message"><AlertCircle size={25} /><p>{cameraError}</p></div> : <video ref={videoRef} muted playsInline />}</div><p className="scanner-help">Apunta la cámara al código QR del invitado.</p><div className="manual-code"><input value={code} onChange={e => setCode(e.target.value)} placeholder="Pega aquí el enlace o token" onKeyDown={e => { if (e.key === 'Enter') void onCode(code) }} /><button className="button button-dark small" disabled={!code.trim()} onClick={() => void onCode(code)}>Buscar</button></div>{error && <p className="form-error scanner-error">{error}</p>}</div></div>
+  return <div className="modal-backdrop scanner-backdrop"><div className="scanner-card"><button className="modal-close" onClick={onClose} aria-label="Cerrar escáner"><X size={19} /></button><div className="scanner-heading"><QrCode size={22} /><div><p className="eyebrow orange">Registro rápido</p><h3>Escanea el QR de la invitación</h3></div></div><div id="qr-reader" className="scanner-viewport">{cameraError && <div className="scanner-message"><AlertCircle size={25} /><p>{cameraError}</p></div>}</div><p className="scanner-help">Apunta la cámara al código QR del invitado.</p><div className="manual-code"><input value={code} onChange={e => setCode(e.target.value)} placeholder="Pega aquí el enlace o token" onKeyDown={e => { if (e.key === 'Enter') void onCode(code) }} /><button className="button button-dark small" disabled={!code.trim()} onClick={() => void onCode(code)}>Buscar</button></div>{error && <p className="form-error scanner-error">{error}</p>}</div></div>
 }
 
 function ConfigurationPage() {
