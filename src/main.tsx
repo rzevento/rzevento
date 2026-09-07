@@ -408,8 +408,10 @@ function QrScanner({ onClose, onCode, error, code, setCode }: { onClose: () => v
       await scanner.start(camera, scannerConfig, decodedText => {
         if (!active) return
         active = false
-        void scanner.stop().catch(() => undefined)
-        onCode(decodedText)
+        void scanner.stop().catch(() => undefined).finally(() => {
+          scanner.clear()
+          onCode(decodedText)
+        })
       }, () => undefined)
     }
     async function start() {
@@ -419,7 +421,9 @@ function QrScanner({ onClose, onCode, error, code, setCode }: { onClose: () => v
         scannerRef.current = scanner
         await startScanner(scanner, { facingMode: 'environment' })
       } catch {
-        if (scanner) scanner.clear()
+        if (scanner) {
+          try { scanner.clear() } catch { /* el lector ya pudo haberse detenido */ }
+        }
         if (!active) return
         try {
           const cameras = await Html5Qrcode.getCameras()
@@ -437,7 +441,9 @@ function QrScanner({ onClose, onCode, error, code, setCode }: { onClose: () => v
       active = false
       const scanner = scannerRef.current
       scannerRef.current = null
-      if (scanner) void scanner.stop().catch(() => undefined)
+      if (scanner) void scanner.stop().catch(() => undefined).finally(() => {
+        try { scanner.clear() } catch { /* el lector ya pudo haberse limpiado */ }
+      })
     }
   }, [])
   return <div className="modal-backdrop scanner-backdrop"><div className="scanner-card"><button className="modal-close" onClick={onClose} aria-label="Cerrar escáner"><X size={19} /></button><div className="scanner-heading"><QrCode size={22} /><div><p className="eyebrow orange">Registro rápido</p><h3>Escanea el QR de la invitación</h3></div></div><div id="qr-reader" className="scanner-viewport">{cameraError && <div className="scanner-message"><AlertCircle size={25} /><p>{cameraError}</p></div>}</div><p className="scanner-help">Apunta la cámara al código QR del invitado.</p><div className="manual-code"><input value={code} onChange={e => setCode(e.target.value)} placeholder="Pega aquí el enlace o token" onKeyDown={e => { if (e.key === 'Enter') void onCode(code) }} /><button className="button button-dark small" disabled={!code.trim()} onClick={() => void onCode(code)}>Buscar</button></div>{error && <p className="form-error scanner-error">{error}</p>}</div></div>
