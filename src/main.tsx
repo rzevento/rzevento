@@ -403,17 +403,34 @@ function QrScanner({ onClose, onCode, error, code, setCode }: { onClose: () => v
   const [cameraError, setCameraError] = useState('')
   useEffect(() => {
     let active = true
+    const scannerConfig = { fps: 15, qrbox: (viewfinderWidth: number, viewfinderHeight: number) => { const size = Math.floor(Math.min(viewfinderWidth, viewfinderHeight) * 0.72); return { width: size, height: size } }, aspectRatio: 1 }
+    async function startScanner(scanner: Html5Qrcode, camera: { facingMode: string } | string) {
+      await scanner.start(camera, scannerConfig, decodedText => {
+        if (!active) return
+        active = false
+        void scanner.stop().catch(() => undefined)
+        onCode(decodedText)
+      }, () => undefined)
+    }
     async function start() {
+      let scanner: Html5Qrcode | null = null
       try {
-        const scanner = new Html5Qrcode('qr-reader')
+        scanner = new Html5Qrcode('qr-reader')
         scannerRef.current = scanner
-        await scanner.start({ facingMode: 'environment' }, { fps: 10, qrbox: { width: 250, height: 250 }, aspectRatio: 1 }, decodedText => {
-          if (!active) return
-          active = false
-          void scanner.stop().catch(() => undefined)
-          onCode(decodedText)
-        }, () => undefined)
-      } catch { setCameraError('No pudimos abrir la cámara. Revisa el permiso o usa el código manual.') }
+        await startScanner(scanner, { facingMode: 'environment' })
+      } catch {
+        if (scanner) scanner.clear()
+        if (!active) return
+        try {
+          const cameras = await Html5Qrcode.getCameras()
+          if (!cameras.length) throw new Error('No camera found')
+          scanner = new Html5Qrcode('qr-reader')
+          scannerRef.current = scanner
+          await startScanner(scanner, cameras[cameras.length - 1].id)
+        } catch {
+          setCameraError(window.isSecureContext ? 'No pudimos abrir la cámara. Activa el permiso de cámara para este sitio o usa el código manual.' : 'El escáner necesita abrirse desde una conexión segura (HTTPS). Usa el código manual o entra desde el enlace seguro.')
+        }
+      }
     }
     void start()
     return () => {
