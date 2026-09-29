@@ -211,3 +211,9 @@ body { background: var(--bg); color: var(--cream); }
   .table-head, .table-line { grid-template-columns: minmax(0, 1fr) auto; }
   .table-line > .invitation-email { grid-column: 2; }
 }
+
+.filter-button select { min-width: 0; border: 0; background: transparent; color: inherit; font: inherit; padding: 11px 2px; cursor: pointer; }
+.filter-button:focus-within { outline: 2px solid var(--orange); outline-offset: 2px; }
+.guest-list-summary { margin: -8px 0 16px; color: #81786e; font-size: 11px; }
+.guest-list-empty { padding: 25px; color: #81786e; font-size: 12px; }
+@media (max-width: 680px) { .filter-bar .filter-button { flex: 1 1 150px; padding: 0 10px; max-width: 100%; } .filter-button select { width: 100%; } }
