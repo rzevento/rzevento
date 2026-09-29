@@ -140,5 +140,15 @@ export async function markInvitationSent(guestId: string) {
 export async function sendInvitation(guestId: string) {
   if (!supabase) return { data: null, error: null, demo: true }
   const { data, error } = await supabase.functions.invoke('send-invitation', { body: { guest_id: guestId } })
+  if (error && 'context' in error && error.context instanceof Response) {
+    const details = await error.context.json().catch(() => null)
+    if (typeof details?.error === 'string') return { data, error: new Error(details.error), demo: false }
+  }
   return { data, error, demo: false }
+}
+
+export async function markWhatsAppInvitationSent(guestId: string) {
+  if (!supabase) return { data: new Date().toISOString(), error: null, demo: true }
+  const { data, error } = await supabase.rpc('mark_whatsapp_invitation_sent', { target_guest_id: guestId })
+  return { data: data as string | null, error, demo: false }
 }

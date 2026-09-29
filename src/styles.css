@@ -187,3 +187,24 @@ body { background: var(--bg); color: var(--cream); }
 .member-form select { width: 100%; border: 0; border-bottom: 1px solid #c7bfb5; background: transparent; padding: 9px 0 10px; color: #241f1a; }
 .member-form .button { height: 39px; white-space: nowrap; }
 @media (max-width: 760px) { .member-form { grid-template-columns: 1fr 1fr; }.member-form > label:first-of-type { grid-column: 1 / -1; }.member-form .button { grid-column: 1 / -1; width: 100%; } }
+
+/* Email and manual WhatsApp delivery are independent channels. */
+.invitation-channels { display: grid; gap: 12px; min-width: 0; }
+.invitation-channel { display: grid; align-content: start; justify-items: start; gap: 5px; }
+.invitation-channel > strong { color: #665e55; font-size: 10px; }
+.invitation-channel small, .invitation-channel time { color: #81786e; font-size: 10px; line-height: 1.4; white-space: normal; }
+.invitation-channels .sent-label { white-space: normal; }
+.invitation-channels .form-error { margin: 0; font-size: 11px; white-space: normal; }
+.invitation-channel .row-action { white-space: normal; text-align: left; }
+.whatsapp-action { color: #286341; text-decoration: none; }
+.table-head, .table-line { grid-template-columns: minmax(150px, 2fr) .8fr minmax(175px, 1.4fr) .9fr .8fr minmax(150px, 1.2fr); }
+@media (min-width: 681px) and (max-width: 1200px) {
+  .guests-table-panel { overflow-x: auto; }
+  .guests-table-panel .table-head, .guests-table-panel .table-line { min-width: 930px; }
+}
+@media (max-width: 680px) {
+  .table-head, .table-line { grid-template-columns: minmax(0, 1fr) auto; }
+  .table-line > .invitation-channels { grid-column: 1 / -1; grid-row: auto; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); margin: 8px 0; padding: 12px 0; border-top: 1px solid #eee8e0; border-bottom: 1px solid #eee8e0; }
+  .table-line > .guest-name { grid-row: auto; }
+  .invitation-channels .form-error { grid-column: 1 / -1; }
+}

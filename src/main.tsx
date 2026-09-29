@@ -6,11 +6,12 @@ import { AlertCircle, ArrowRight, CalendarDays, Camera, Check, CheckCircle2, Che
 import { jsPDF } from 'jspdf'
 import QRCode from 'qrcode'
 import { Html5Qrcode } from 'html5-qrcode'
-import { addEventMember, beginRsvp, cancelRsvp, checkInGuest, createGuest, findGuestByQr, getCurrentOrganizerProfile, getEventMembers, getInvitationToken, sendInvitation, submitRsvp, supabase } from './lib/supabase'
+import { addEventMember, beginRsvp, cancelRsvp, checkInGuest, createGuest, findGuestByQr, getCurrentOrganizerProfile, getEventMembers, getInvitationToken, markWhatsAppInvitationSent, sendInvitation, submitRsvp, supabase } from './lib/supabase'
+import { whatsappInvitationUrl, whatsappPhone } from './lib/invitations'
 import './styles.css'
 
 type GuestStatus = 'Confirmado' | 'Pendiente' | 'Canceló'
-type Guest = { id: string; name: string; company: string; email: string; phone: string; origin: string; invite: string; status: GuestStatus; checkedIn: boolean }
+type Guest = { id: string; name: string; company: string; email: string; phone: string; origin: string; invite: string; whatsappSentAt?: string | null; invitationToken?: string | null; status: GuestStatus; checkedIn: boolean }
 
 const event = {
   eyebrow: 'Conferencia privada',
@@ -77,20 +78,20 @@ const guestQuery = async (): Promise<Guest[]> => {
   if (!supabase) return demoGuests
   const { data: activeEvent, error: eventError } = await supabase.from('events').select('id').order('created_at', { ascending: false }).limit(1).maybeSingle()
   if (eventError || !activeEvent) return []
-  const { data, error } = await supabase.from('guests').select('id, full_name, company, email, phone, origin, invitations(status), rsvps(status), check_ins(id)').eq('event_id', activeEvent.id).order('created_at', { ascending: false })
+  const { data, error } = await supabase.from('guests').select('id, full_name, company, email, phone, origin, invitations(*), rsvps(status), check_ins(id)').eq('event_id', activeEvent.id).order('created_at', { ascending: false })
   if (error || !data) return []
   return data.map((guest) => {
     const invitation = Array.isArray(guest.invitations) ? guest.invitations[0] : guest.invitations
     const rsvp = Array.isArray(guest.rsvps) ? guest.rsvps[0] : guest.rsvps
     const checkIn = Array.isArray(guest.check_ins) ? guest.check_ins[0] : guest.check_ins
     const status: GuestStatus = rsvp?.status === 'confirmed' ? 'Confirmado' : rsvp?.status === 'cancelled' || rsvp?.status === 'declined' ? 'Canceló' : 'Pendiente'
-    return { id: String(guest.id), name: guest.full_name || 'Invitado pendiente', company: guest.company || 'Sin empresa', email: guest.email || '', phone: guest.phone || '', origin: guest.origin || 'Sin origen', invite: invitation?.status === 'sent' ? 'Enviada' : 'Pendiente', status, checkedIn: Boolean(checkIn) }
+    return { id: String(guest.id), name: guest.full_name || 'Invitado pendiente', company: guest.company || 'Sin empresa', email: guest.email || '', phone: guest.phone || '', origin: guest.origin || 'Sin origen', invite: invitation?.status === 'sent' ? 'Enviada' : 'Pendiente', whatsappSentAt: invitation?.whatsapp_sent_at || null, invitationToken: invitation?.token || null, status, checkedIn: Boolean(checkIn) }
   })
 }
 
 function downloadGuestCsv(guests: Guest[]) {
-  const header = ['nombre', 'correo', 'celular', 'empresa', 'invitacion', 'respuesta', 'asistencia']
-  const rows = guests.map(g => [g.name, g.email, g.phone, g.company, g.invite, g.status, g.checkedIn ? 'Presente' : 'Pendiente'])
+  const header = ['nombre', 'correo', 'celular', 'empresa', 'correo_enviado', 'whatsapp_enviado', 'whatsapp_enviado_fecha', 'respuesta', 'asistencia']
+  const rows = guests.map(g => [g.name, g.email, g.phone, g.company, g.email ? g.invite : 'Sin correo', g.whatsappSentAt ? 'Enviada' : 'Pendiente', g.whatsappSentAt || '', g.status, g.checkedIn ? 'Presente' : 'Pendiente'])
   const csv = [header, ...rows].map(row => row.map(value => `"${String(value).replaceAll('"', '""')}"`).join(',')).join('\n')
   const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }))
   const anchor = document.createElement('a')
@@ -191,7 +192,7 @@ function RegistrationPage({ token = 'demo' }: { token?: string }) {
     pdf.text(pdf.splitTextToSize('Esta entrada es personal e intransferible. También llegará por correo. No es necesario imprimirla; puedes mostrarla desde tu celular.', 82), 100, 187, { lineHeightFactor: 1.55 })
     pdf.save('entrada-personal-rz-eventos.pdf')
   }
-  return <main className="register-page"><section className="register-intro"><div className="circle circle-one"></div><div className="circle circle-two"></div><Logo /><p className="eyebrow">{event.eyebrow}</p><h1>{event.title} <span>{event.accent}</span></h1><div className="line"></div><p className="intro-copy">Una conversación para quienes construyen empresas que trascienden generaciones.</p><div className="event-meta"><div><CalendarDays size={19} /><span>{event.date}<small>{event.time}</small></span></div><div><MapPin size={19} /><span>{event.venue}<small>{event.city}</small></span></div></div></section><section className="register-card"><div className="card-top"><p className="eyebrow">Evento exclusivo por invitación</p><h2>Confirma tu asistencia</h2><div className="invitation-notices"><p><ShieldCheck size={15} /> Ingresa el correo o celular con el que fuiste invitado.</p><p><LockKeyhole size={15} /> Esta invitación es personal e intransferible.</p></div><p>Completa tus datos para reservar tu lugar.</p></div><form onSubmit={handleSubmit}><label>Nombre completo<input value={form.name} onChange={update('name')} placeholder="Tu nombre" /></label><label>Correo electrónico<input type="email" value={form.email} onChange={update('email')} placeholder="nombre@empresa.com" /></label><label>Celular<input type="tel" value={form.phone} onChange={update('phone')} placeholder="10 dígitos" /></label><label>Empresa<input value={form.origin} onChange={update('origin')} placeholder="Nombre de la empresa" /></label>{error && <p className="form-error">{error}</p>}<button className="button button-orange" type="submit" disabled={submitting}>{submitting ? 'Guardando…' : 'Confirmar asistencia'} {!submitting && <ArrowRight size={17} />}</button></form><p className="privacy-note"><ShieldCheck size={15} /> Tus datos se utilizarán únicamente para la organización del evento.</p></section></main>
+  return <main className="register-page"><section className="register-intro"><div className="circle circle-one"></div><div className="circle circle-two"></div><Logo /><p className="eyebrow">{event.eyebrow}</p><h1>{event.title} <span>{event.accent}</span></h1><div className="line"></div><p className="intro-copy">Una conversación para quienes construyen empresas que trascienden generaciones.</p><div className="event-meta"><div><CalendarDays size={19} /><span>{event.date}<small>{event.time}</small></span></div><div><MapPin size={19} /><span>{event.venue}<small>{event.city}</small></span></div></div></section><section className="register-card"><div className="card-top"><p className="eyebrow">Evento exclusivo por invitación</p><h2>Confirma tu asistencia</h2><div className="invitation-notices"><p><ShieldCheck size={15} /> Ingresa el correo o celular con el que fuiste invitado.</p><p><LockKeyhole size={15} /> Esta invitación es personal e intransferible.</p></div><p>Completa tus datos para reservar tu lugar.</p></div><form onSubmit={handleSubmit}><label>Nombre completo<input value={form.name} onChange={update('name')} placeholder="Tu nombre" /></label><label>Correo electrónico<input type="email" value={form.email} onChange={update('email')} placeholder="nombre@empresa.com" /></label><label>Celular<input type="tel" value={form.phone} onChange={update('phone')} placeholder="México: 10 dígitos · Otros: +código de país" /></label><label>Empresa<input value={form.origin} onChange={update('origin')} placeholder="Nombre de la empresa" /></label>{error && <p className="form-error">{error}</p>}<button className="button button-orange" type="submit" disabled={submitting}>{submitting ? 'Guardando…' : 'Confirmar asistencia'} {!submitting && <ArrowRight size={17} />}</button></form><p className="privacy-note"><ShieldCheck size={15} /> Tus datos se utilizarán únicamente para la organización del evento.</p></section></main>
 }
 
 function TokenRegistrationPage() {
@@ -225,7 +226,7 @@ function AdminLayout() {
   if (!sessionReady) return <div className="auth-loading">Cargando acceso…</div>
   if (!authenticated) return <AdminLogin onLocalAuthenticated={() => { localStorage.setItem('rz-organizer-authenticated', 'true'); setLocalAuthenticated(true); setAuthenticated(true) }} />
   const organizerInitials = organizer.displayName.split(' ').map(name => name[0]).slice(0, 2).join('').toUpperCase()
-  const sentInvitations = guests.filter(guest => guest.invite === 'Enviada').length
+  const sentInvitations = guests.filter(guest => guest.invite === 'Enviada' || Boolean(guest.whatsappSentAt)).length
   return <div className={`admin-shell ${mobileNavOpen ? 'mobile-open' : ''}`}><aside className="sidebar"><div className="sidebar-brand"><Logo /><span>RZ EVENTOS</span></div><div className="event-switcher"><span>EVENTO ACTIVO</span><strong>Familias empresarias</strong><ChevronDown size={15} /></div><nav onClick={() => setMobileNavOpen(false)}><Link to="/admin" activeOptions={{ exact: true }} activeProps={{ className: 'active' }}><LayoutDashboard size={18} /> Resumen</Link><Link to="/admin/invitados" activeProps={{ className: 'active' }}><Users size={18} /> Invitados <b>{sentInvitations}</b></Link><Link to="/admin/check-in" activeProps={{ className: 'active' }}><CheckCircle2 size={18} /> Registro en evento</Link><Link to="/admin/configuracion" activeProps={{ className: 'active' }}><Settings2 size={18} /> Configuración</Link></nav><div className="sidebar-bottom"><div className="user-avatar">{organizerInitials}</div><div><strong>{organizer.displayName}</strong><small>{organizer.role}</small></div><button className="sidebar-logout" onClick={() => { localStorage.removeItem('rz-organizer-authenticated'); sessionStorage.removeItem('rz-organizer-authenticated'); if (supabase) void supabase.auth.signOut(); else { setLocalAuthenticated(false); setAuthenticated(false) } }} aria-label="Cerrar sesión"><MoreHorizontal size={18} /></button></div></aside><main className="admin-main"><header className="admin-header"><button className="mobile-menu" onClick={() => setMobileNavOpen(current => !current)} aria-label="Abrir menú"><Menu size={20} /></button><div><p className="eyebrow">Martes 17 de noviembre de 2026</p><h1>Familias empresarias</h1></div><div className="header-actions"><button className="icon-button" onClick={() => downloadGuestCsv(guests)} aria-label="Descargar lista de invitados"><Download size={17} /></button><button className="button button-orange small" onClick={() => void navigate({ to: '/admin/invitados' })}><Send size={16} /> Nueva invitación</button></div></header><Outlet /></main></div>
 }
 
@@ -277,14 +278,59 @@ function Stat({ icon, value, label, detail, accent = false }: { icon: React.Reac
 function GuestRows({ guests }: { guests: Guest[] }) { return <div className="guest-rows">{guests.map(g => <div className="guest-row" key={g.id}><div className="table-avatar">{g.name.split(' ').map(n => n[0]).slice(0, 2).join('')}</div><div className="guest-name"><strong>{g.name}</strong><small>{g.company}</small></div><span className={`status status-${g.status === 'Confirmado' ? 'confirmed' : g.status === 'Canceló' ? 'cancelled' : 'pending'}`}><i></i>{g.status}</span><small className="row-origin">{g.origin}</small><MoreHorizontal size={17} className="row-more" /></div>)}</div> }
 
 function InvitationState({ guest }: { guest: Guest }) {
-  const [saving, setSaving] = useState(false)
-  async function markSent() {
-    setSaving(true)
-    const result = await sendInvitation(guest.id)
-    setSaving(false)
-    if (!result.error) queryClient.setQueryData<Guest[]>(['guests'], current => (current || demoGuests).map(item => item.id === guest.id ? { ...item, invite: 'Enviada' } : item))
+  const [saving, setSaving] = useState<'email' | 'whatsapp' | null>(null)
+  const [error, setError] = useState('')
+  const isDemo = !supabase
+  let whatsappUrl = ''
+  let whatsappHint = ''
+  if (!isDemo && guest.phone) {
+    try {
+      whatsappUrl = whatsappInvitationUrl(guest.phone, guest.name, guest.invitationToken || '', import.meta.env.VITE_PUBLIC_SITE_URL || window.location.origin)
+    } catch (cause) {
+      whatsappHint = cause instanceof Error ? cause.message : 'No se pudo preparar el enlace de WhatsApp.'
+    }
   }
-  return guest.invite === 'Enviada' ? <span className="sent-label"><Send size={13} /> Enviada</span> : <button className="send-inline" disabled={saving} onClick={() => void markSent()}>{saving ? 'Enviando…' : 'Enviar invitación'}</button>
+  async function sendEmail() {
+    setSaving('email')
+    setError('')
+    try {
+      const result = await sendInvitation(guest.id)
+      if (result.error) throw result.error
+      queryClient.setQueryData<Guest[]>(['guests'], current => (current || demoGuests).map(item => item.id === guest.id ? { ...item, invite: 'Enviada' } : item))
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'No se pudo confirmar el envío. Revisa el historial de Make antes de reintentar.')
+    } finally {
+      setSaving(null)
+    }
+  }
+  async function markWhatsApp() {
+    setSaving('whatsapp')
+    setError('')
+    try {
+      const result = await markWhatsAppInvitationSent(guest.id)
+      if (result.error || !result.data) throw result.error || new Error('No se recibió la fecha del envío')
+      queryClient.setQueryData<Guest[]>(['guests'], current => (current || demoGuests).map(item => item.id === guest.id ? { ...item, whatsappSentAt: result.data } : item))
+    } catch {
+      setError('No se pudo guardar el envío de WhatsApp. Revisa tu acceso y que la migración de WhatsApp esté aplicada.')
+    } finally {
+      setSaving(null)
+    }
+  }
+  return <div className="invitation-channels">
+    <div className="invitation-channel"><strong>Correo</strong>
+      {!guest.email ? <span className="muted">Sin correo</span> : guest.invite === 'Enviada' ? <span className="sent-label"><Send size={13} /> Enviado</span> : <button className="send-inline" disabled={Boolean(saving)} onClick={() => void sendEmail()}>{saving === 'email' ? 'Enviando…' : 'Enviar correo'}</button>}
+    </div>
+    <div className="invitation-channel"><strong>WhatsApp</strong>
+      {guest.whatsappSentAt ? <><span className="sent-label"><Check size={13} /> Enviado manualmente</span><time dateTime={guest.whatsappSentAt}>{new Date(guest.whatsappSentAt).toLocaleString('es-MX', { dateStyle: 'short', timeStyle: 'short' })}</time></> : <span className="muted">{guest.phone ? 'Pendiente' : 'Sin celular'}</span>}
+      {guest.phone && <>
+        {whatsappUrl && <a className="row-action whatsapp-action" href={whatsappUrl} target="_blank" rel="noopener noreferrer">Abrir WhatsApp <ArrowRight size={12} /></a>}
+        {isDemo && <small>Modo demo: no se abre un mensaje real.</small>}
+        {whatsappHint && <small>{whatsappHint}</small>}
+        {!guest.whatsappSentAt && <><button className="row-action" disabled={Boolean(saving) || !whatsappPhone(guest.phone)} onClick={() => void markWhatsApp()}>{saving === 'whatsapp' ? 'Guardando…' : 'Marcar WhatsApp enviado'}</button><small>Pulsa después de enviarlo en WhatsApp.</small></>}
+      </>}
+    </div>
+    {error && <p className="form-error" role="alert">{error}</p>}
+  </div>
 }
 
 function NewGuestModal({ onClose }: { onClose: () => void }) {
@@ -310,7 +356,7 @@ function NewGuestModal({ onClose }: { onClose: () => void }) {
     else await queryClient.invalidateQueries({ queryKey: ['guests'] })
     onClose()
   }
-  return <div className="modal-backdrop" onMouseDown={onClose}><div className="modal-card" onMouseDown={e => e.stopPropagation()}><button className="modal-close" onClick={onClose} aria-label="Cerrar">×</button><p className="eyebrow orange">Nueva invitación</p><h2>Agregar invitado</h2><p className="muted">Captura el correo o celular con el que fue invitado. El nombre puede completarse después.</p><form onSubmit={save}><label>Nombre completo <small>(opcional)</small><input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="Si ya lo tienes" /></label><label>Correo electrónico <small>(opcional si registras celular)</small><input type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} placeholder="nombre@empresa.com" /></label><label>Celular <small>(opcional si registras correo)</small><input value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} placeholder="10 dígitos" /></label>{error && <p className="form-error">{error}</p>}<button className="button button-orange" disabled={saving}>{saving ? 'Guardando…' : 'Crear invitación'} <ArrowRight size={16} /></button></form></div></div>
+  return <div className="modal-backdrop" onMouseDown={onClose}><div className="modal-card" onMouseDown={e => e.stopPropagation()}><button className="modal-close" onClick={onClose} aria-label="Cerrar">×</button><p className="eyebrow orange">Nueva invitación</p><h2>Agregar invitado</h2><p className="muted">Captura el correo o celular con el que fue invitado. El nombre puede completarse después.</p><form onSubmit={save}><label>Nombre completo <small>(opcional)</small><input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="Si ya lo tienes" /></label><label>Correo electrónico <small>(opcional si registras celular)</small><input type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} placeholder="nombre@empresa.com" /></label><label>Celular <small>(opcional si registras correo)</small><input value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} placeholder="México: 10 dígitos · Otros: +código de país" /></label>{error && <p className="form-error">{error}</p>}<button className="button button-orange" disabled={saving}>{saving ? 'Guardando…' : 'Crear invitación'} <ArrowRight size={16} /></button></form></div></div>
 }
 
 function GuestPassModal({ guest, token, onClose }: { guest: Guest; token: string; onClose: () => void }) {
@@ -365,17 +411,7 @@ function GuestsPage() {
       setArrivalLoading(null)
     }
   }
-  function exportCsv() {
-    const header = ['nombre', 'correo', 'celular', 'empresa', 'invitacion', 'respuesta', 'asistencia']
-    const rows = data.map(g => [g.name, g.email, g.phone, g.company, g.invite, g.status, g.checkedIn ? 'Presente' : 'Pendiente'])
-    const csv = [header, ...rows].map(row => row.map(value => `"${String(value).replaceAll('"', '""')}"`).join(',')).join('\n')
-    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }))
-    const anchor = document.createElement('a')
-    anchor.href = url
-    anchor.download = 'invitados-familias-empresarias.csv'
-    anchor.click()
-    URL.revokeObjectURL(url)
-  }
+  function exportCsv() { downloadGuestCsv(data) }
   function parseCsv(source: string) {
     const normalized = source.replace(/^\uFEFF/, '')
     const firstLine = normalized.split(/\r?\n/, 1)[0] || ''
