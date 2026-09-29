@@ -6,7 +6,7 @@ import { AlertCircle, ArrowRight, CalendarDays, Camera, Check, CheckCircle2, Che
 import { jsPDF } from 'jspdf'
 import QRCode from 'qrcode'
 import { Html5Qrcode } from 'html5-qrcode'
-import { addEventMember, beginRsvp, cancelRsvp, checkInGuest, undoCheckInGuest, createGuest, findGuestByQr, getCurrentOrganizerProfile, getEventMembers, getInvitationToken, markWhatsAppInvitationSent, sendInvitation, submitRsvp, supabase } from './lib/supabase'
+import { addEventMember, beginRsvp, cancelRsvp, checkInGuest, undoCheckInGuest, createGuest, findGuestByQr, getCurrentOrganizerProfile, getEventMembers, getInvitationToken, getInvitationDetails, markWhatsAppInvitationSent, sendInvitation, submitRsvp, supabase } from './lib/supabase'
 import { whatsappInvitationUrl, whatsappPhone } from './lib/invitations'
 import './styles.css'
 
@@ -124,10 +124,35 @@ function RegistrationPage({ token = 'demo' }: { token?: string }) {
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
   const [form, setForm] = useState({ name: '', email: '', phone: '', origin: '' })
+  const [prefillStatus, setPrefillStatus] = useState<'loading' | 'ready' | 'error'>(directToken ? 'loading' : 'ready')
+  const [loadAttempt, setLoadAttempt] = useState(0)
+  useEffect(() => {
+    if (!directToken) return
+    let active = true
+    setPrefillStatus('loading')
+    setError('')
+    void getInvitationDetails(directToken).then(result => {
+      if (!active) return
+      if (result.error) throw result.error
+      if (!result.data) {
+        setError('Este enlace de invitación no es válido. Revisa el enlace que recibiste.')
+        setPrefillStatus('error')
+        return
+      }
+      setForm({ name: result.data.name || '', email: result.data.email || '', phone: result.data.phone || '', origin: result.data.company || '' })
+      setPrefillStatus('ready')
+    }).catch(() => {
+      if (!active) return
+      setError('No pudimos cargar tus datos. Intenta de nuevo.')
+      setPrefillStatus('error')
+    })
+    return () => { active = false }
+  }, [directToken, loadAttempt])
   const update = (key: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) => setForm({ ...form, [key]: e.target.value })
   if (sent) return <main className="register-page success-page"><div className="success-card"><div className="success-icon">{cancelled ? <span>×</span> : <Check size={25} />}</div><p className="eyebrow">{cancelled ? 'Asistencia cancelada' : alreadyRegistered ? 'Asistencia confirmada' : 'Registro recibido'}</p><h1>{cancelled ? 'Tu cancelación quedó registrada.' : alreadyRegistered ? 'Tu asistencia ya está confirmada.' : `Gracias, ${form.name.split(' ')[0] || 'por confirmar'}.`}</h1><p>{cancelled ? 'Si cambias de opinión, puedes volver a confirmar desde este mismo enlace.' : alreadyRegistered ? 'Puedes descargar tu entrada o cancelar tu asistencia desde aquí.' : 'Tu lugar para la conferencia está apartado. Te esperamos el martes 17 de noviembre en Hyatt Regency Andares.'}</p>{!cancelled && <><div className="success-details"><CalendarDays size={18} /><span>{event.date}<br /><small>{event.time}</small></span></div><p className="pass-note"><ShieldCheck size={15} /> {form.email ? 'También recibirás tu entrada por correo.' : 'Si registraste un correo, también recibirás tu entrada por ahí.'} No es necesario imprimirla; puedes mostrarla desde tu celular.</p></>}<div className="success-actions">{!cancelled && <><button className="button button-orange" onClick={() => void downloadPass()}><Download size={16} /> Descargar entrada</button><Link className="outline-button" to="/informacion">Ver más sobre el evento <ArrowRight size={15} /></Link></>}{!cancelled && <button className="cancel-link" onClick={() => { void cancelRsvp(resolvedToken || token).then(result => { if (!result.error) setCancelled(true) }) }}>Ya no podré asistir</button>}</div></div></main>
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
+    if (prefillStatus !== 'ready' || submitting) return
     if (!form.email.trim() && !form.phone.trim()) {
       setError('Escribe tu correo o tu celular para identificar tu registro.')
       return
@@ -200,12 +225,12 @@ function RegistrationPage({ token = 'demo' }: { token?: string }) {
     pdf.text(pdf.splitTextToSize('Esta entrada es personal e intransferible. También llegará por correo. No es necesario imprimirla; puedes mostrarla desde tu celular.', 82), 100, 187, { lineHeightFactor: 1.55 })
     pdf.save('entrada-personal-rz-eventos.pdf')
   }
-  return <main className="register-page"><section className="register-intro"><div className="circle circle-one"></div><div className="circle circle-two"></div><Logo /><p className="eyebrow">{event.eyebrow}</p><h1>{event.title} <span>{event.accent}</span></h1><div className="line"></div><p className="intro-copy">Una conversación para quienes construyen empresas que trascienden generaciones.</p><div className="event-meta"><div><CalendarDays size={19} /><span>{event.date}<small>{event.time}</small></span></div><div><MapPin size={19} /><span>{event.venue}<small>{event.city}</small></span></div></div></section><section className="register-card"><div className="card-top"><p className="eyebrow">Evento exclusivo por invitación</p><h2>Confirma tu asistencia</h2><div className="invitation-notices"><p><ShieldCheck size={15} /> Ingresa el correo o celular con el que fuiste invitado.</p><p><LockKeyhole size={15} /> Esta invitación es personal e intransferible.</p></div><p>Completa tus datos para reservar tu lugar.</p></div><form onSubmit={handleSubmit}><label>Nombre completo<input value={form.name} onChange={update('name')} placeholder="Tu nombre" /></label><label>Correo electrónico<input type="email" value={form.email} onChange={update('email')} placeholder="nombre@empresa.com" /></label><label>Celular<input type="tel" value={form.phone} onChange={update('phone')} placeholder="México: 10 dígitos · Otros: +código de país" /></label><label>Empresa<input value={form.origin} onChange={update('origin')} placeholder="Nombre de la empresa" /></label>{error && <p className="form-error">{error}</p>}<button className="button button-orange" type="submit" disabled={submitting}>{submitting ? 'Guardando…' : 'Confirmar asistencia'} {!submitting && <ArrowRight size={17} />}</button></form><p className="privacy-note"><ShieldCheck size={15} /> Tus datos se utilizarán únicamente para la organización del evento.</p></section></main>
+  return <main className="register-page"><section className="register-intro"><div className="circle circle-one"></div><div className="circle circle-two"></div><Logo /><p className="eyebrow">{event.eyebrow}</p><h1>{event.title} <span>{event.accent}</span></h1><div className="line"></div><p className="intro-copy">Una conversación para quienes construyen empresas que trascienden generaciones.</p><div className="event-meta"><div><CalendarDays size={19} /><span>{event.date}<small>{event.time}</small></span></div><div><MapPin size={19} /><span>{event.venue}<small>{event.city}</small></span></div></div></section><section className="register-card"><div className="card-top"><p className="eyebrow">Evento exclusivo por invitación</p><h2>Confirma tu asistencia</h2><div className="invitation-notices"><p><ShieldCheck size={15} /> {directToken ? 'Revisa tus datos y completa lo que falte.' : 'Ingresa el correo o celular con el que fuiste invitado.'}</p><p><LockKeyhole size={15} /> Esta invitación es personal e intransferible.</p></div><p>Completa tus datos para reservar tu lugar.</p></div><form onSubmit={handleSubmit} aria-busy={prefillStatus === 'loading'}>{prefillStatus === 'loading' && <p role="status">Cargando tus datos…</p>}<label>Nombre completo<input disabled={prefillStatus !== 'ready' || submitting} value={form.name} onChange={update('name')} placeholder="Tu nombre" /></label><label>Correo electrónico<input type="email" disabled={prefillStatus !== 'ready' || submitting} value={form.email} onChange={update('email')} placeholder="nombre@empresa.com" /></label><label>Celular<input type="tel" disabled={prefillStatus !== 'ready' || submitting} value={form.phone} onChange={update('phone')} placeholder="México: 10 dígitos · Otros: +código de país" /></label><label>Empresa<input disabled={prefillStatus !== 'ready' || submitting} value={form.origin} onChange={update('origin')} placeholder="Nombre de la empresa" /></label>{error && <p className="form-error" role="alert">{error}</p>}{prefillStatus === 'error' && <button className="outline-button" type="button" onClick={() => setLoadAttempt(attempt => attempt + 1)}>Volver a cargar</button>}<button className="button button-orange" type="submit" disabled={submitting || prefillStatus !== 'ready'}>{submitting ? 'Guardando…' : 'Confirmar asistencia'} {!submitting && <ArrowRight size={17} />}</button></form><p className="privacy-note"><ShieldCheck size={15} /> Tus datos se utilizarán únicamente para la organización del evento.</p></section></main>
 }
 
 function TokenRegistrationPage() {
   const { token } = useParams({ from: '/registro/$token' })
-  return <RegistrationPage token={token} />
+  return <RegistrationPage key={token} token={token} />
 }
 
 function InformationPage() {

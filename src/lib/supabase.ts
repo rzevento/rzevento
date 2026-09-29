@@ -65,6 +65,12 @@ export async function beginRsvp(contact: string) {
   return { data, error, demo: false }
 }
 
+export async function getInvitationDetails(token: string) {
+  if (!supabase) return { data: { name: 'Mariana González', email: 'mariana@gcobalto.com', phone: '', company: 'Grupo Cobalto' }, error: null }
+  const { data, error } = await supabase.rpc('get_invitation_details', { invitation_token: token })
+  return { data: data as { name: string | null; email: string | null; phone: string | null; company: string | null } | null, error }
+}
+
 export async function cancelRsvp(token: string) {
   if (!supabase) return { data: null, error: null, demo: true }
   const { data, error } = await supabase.rpc('cancel_rsvp', { invitation_token: token })
