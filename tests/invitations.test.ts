@@ -1,6 +1,16 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { whatsappPhone, whatsappInvitationUrl } from '../src/lib/invitations.ts'
+import { canSendPendingEmail, whatsappPhone, whatsappInvitationUrl } from '../src/lib/invitations.ts'
+
+test('bulk email only includes contacts with email and no recorded delivery in either channel', () => {
+  const pending = { email: 'ana@example.com', invite: 'Pendiente' }
+  assert.equal(canSendPendingEmail(pending), true)
+  assert.equal(canSendPendingEmail({ ...pending, email: '' }), false)
+  assert.equal(canSendPendingEmail({ ...pending, email: '   ' }), false)
+  assert.equal(canSendPendingEmail({ ...pending, invite: 'Enviada' }), false)
+  assert.equal(canSendPendingEmail({ ...pending, whatsappSentAt: '2026-09-29T12:00:00Z' }), false)
+  assert.equal(canSendPendingEmail({ ...pending, invite: 'Enviada', whatsappSentAt: '2026-09-29T12:00:00Z' }), false)
+})
 
 test('normalizes Mexican local numbers and explicit international numbers', () => {
   assert.equal(whatsappPhone('(33) 1234-5678'), '523312345678')

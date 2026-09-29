@@ -1,13 +1,13 @@
 import { StrictMode, useEffect, useId, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
-import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query'
+import { QueryClient, QueryClientProvider, useIsMutating, useMutation, useQuery } from '@tanstack/react-query'
 import { createRootRoute, createRoute, createRouter, Link, Outlet, RouterProvider, useNavigate, useParams } from '@tanstack/react-router'
 import { AlertCircle, ArrowRight, CalendarDays, Camera, Check, CheckCircle2, ChevronDown, Clock3, Download, Eye, EyeOff, Filter, LayoutDashboard, LockKeyhole, MapPin, Menu, MoreHorizontal, QrCode, Search, Send, Settings2, ShieldCheck, Upload, Users, X } from 'lucide-react'
 import { jsPDF } from 'jspdf'
 import QRCode from 'qrcode'
 import { Html5Qrcode } from 'html5-qrcode'
 import { addEventMember, beginRsvp, cancelRsvp, checkInGuest, undoCheckInGuest, createGuest, findGuestByQr, getCurrentOrganizerProfile, getEventMembers, getInvitationToken, getInvitationDetails, markWhatsAppInvitationSent, sendInvitation, submitRsvp, supabase } from './lib/supabase'
-import { whatsappInvitationUrl, whatsappPhone } from './lib/invitations'
+import { canSendPendingEmail, whatsappInvitationUrl, whatsappPhone } from './lib/invitations'
 import './styles.css'
 
 type GuestStatus = 'Confirmado' | 'Pendiente' | 'Canceló'
@@ -77,15 +77,17 @@ const queryClient = new QueryClient()
 const guestQuery = async (): Promise<Guest[]> => {
   if (!supabase) return queryClient.getQueryData<Guest[]>(['guests']) || demoGuests
   const { data: activeEvent, error: eventError } = await supabase.from('events').select('id').order('created_at', { ascending: false }).limit(1).maybeSingle()
-  if (eventError || !activeEvent) return []
+  if (eventError) throw eventError
+  if (!activeEvent) return []
   const { data, error } = await supabase.from('guests').select('id, full_name, company, email, phone, origin, invitations(*), rsvps(status), check_ins(id)').eq('event_id', activeEvent.id).order('created_at', { ascending: false })
-  if (error || !data) return []
+  if (error) throw error
+  if (!data) return []
   return data.map((guest) => {
     const invitation = Array.isArray(guest.invitations) ? guest.invitations[0] : guest.invitations
     const rsvp = Array.isArray(guest.rsvps) ? guest.rsvps[0] : guest.rsvps
     const checkIn = Array.isArray(guest.check_ins) ? guest.check_ins[0] : guest.check_ins
     const status: GuestStatus = rsvp?.status === 'confirmed' ? 'Confirmado' : rsvp?.status === 'cancelled' || rsvp?.status === 'declined' ? 'Canceló' : 'Pendiente'
-    return { id: String(guest.id), name: guest.full_name || 'Invitado pendiente', company: guest.company || 'Sin empresa', email: guest.email || '', phone: guest.phone || '', origin: guest.origin || 'Sin origen', invite: invitation?.status === 'sent' ? 'Enviada' : 'Pendiente', whatsappSentAt: invitation?.whatsapp_sent_at || null, invitationToken: invitation?.token || null, status, checkedIn: Boolean(checkIn) }
+    return { id: String(guest.id), name: guest.full_name || 'Invitado pendiente', company: guest.company || 'Sin empresa', email: guest.email || '', phone: guest.phone || '', origin: guest.origin || 'Sin origen', invite: invitation?.sent_at || invitation?.status === 'sent' ? 'Enviada' : 'Pendiente', whatsappSentAt: invitation?.whatsapp_sent_at || null, invitationToken: invitation?.token || null, status, checkedIn: Boolean(checkIn) }
   })
 }
 
@@ -310,7 +312,7 @@ function Stat({ icon, value, label, detail, accent = false }: { icon: React.Reac
 
 function GuestRows({ guests }: { guests: Guest[] }) { return <div className="guest-rows">{guests.map(g => <div className="guest-row" key={g.id}><div className="table-avatar">{g.name.split(' ').map(n => n[0]).slice(0, 2).join('')}</div><div className="guest-name"><strong>{g.name}</strong><small>{g.company}</small></div><span className={`status status-${g.status === 'Confirmado' ? 'confirmed' : g.status === 'Canceló' ? 'cancelled' : 'pending'}`}><i></i>{g.status}</span><small className="row-origin">{g.origin}</small><MoreHorizontal size={17} className="row-more" /></div>)}</div> }
 
-function InvitationState({ guest, channel = 'email' }: { guest: Guest; channel?: 'email' | 'whatsapp' }) {
+function InvitationState({ guest, channel = 'email', disabled = false }: { guest: Guest; channel?: 'email' | 'whatsapp'; disabled?: boolean }) {
   const menuId = useId()
   const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0 })
   const [saving, setSaving] = useState<'email' | 'whatsapp' | null>(null)
@@ -326,8 +328,10 @@ function InvitationState({ guest, channel = 'email' }: { guest: Guest; channel?:
       whatsappHint = cause instanceof Error ? cause.message : 'No se pudo preparar el enlace de WhatsApp.'
     }
   }
+  const emailMutation = useMutation({ mutationKey: ['invitation-send'], mutationFn: sendEmail })
+  const whatsappMutation = useMutation({ mutationKey: ['invitation-send'], mutationFn: markWhatsApp })
   async function sendEmail() {
-    if (saving) return
+    if (saving || disabled) return
     setSaving('email')
     setError('')
     setEmailNotice('')
@@ -343,6 +347,7 @@ function InvitationState({ guest, channel = 'email' }: { guest: Guest; channel?:
     }
   }
   async function markWhatsApp() {
+    if (saving || disabled) return
     setSaving('whatsapp')
     setError('')
     try {
@@ -356,7 +361,7 @@ function InvitationState({ guest, channel = 'email' }: { guest: Guest; channel?:
     }
   }
   if (channel === 'email') return <div className="invitation-email">
-    {!guest.email ? <span className="muted">Sin correo</span> : guest.invite === 'Enviada' ? <><span className="sent-label"><Send size={13} /> Enviado</span><button className="send-inline" disabled={Boolean(saving)} onClick={() => void sendEmail()}>{saving === 'email' ? 'Reenviando…' : 'Reenviar invitación'}</button></> : <button className="send-inline" disabled={Boolean(saving)} onClick={() => void sendEmail()}>{saving === 'email' ? 'Enviando…' : 'Enviar correo'}</button>}
+    {!guest.email ? <span className="muted">Sin correo</span> : guest.invite === 'Enviada' ? <><span className="sent-label"><Send size={13} /> Enviado</span><button className="send-inline" disabled={disabled || Boolean(saving)} onClick={() => emailMutation.mutate()}>{saving === 'email' ? 'Reenviando…' : 'Reenviar invitación'}</button></> : <button className="send-inline" disabled={disabled || Boolean(saving)} onClick={() => emailMutation.mutate()}>{saving === 'email' ? 'Enviando…' : 'Enviar correo'}</button>}
     {emailNotice && <small role="status">{emailNotice}</small>}
     {error && <p className="form-error" role="alert">{error}</p>}
   </div>
@@ -374,7 +379,7 @@ function InvitationState({ guest, channel = 'email' }: { guest: Guest; channel?:
           {whatsappUrl && <a className="row-action whatsapp-action" href={whatsappUrl} target="_blank" rel="noopener noreferrer">Abrir WhatsApp <ArrowRight size={12} /></a>}
           {isDemo && <small>Modo demo: no se abre un mensaje real.</small>}
           {whatsappHint && <small>{whatsappHint}</small>}
-          {!guest.whatsappSentAt && <><button className="row-action" disabled={Boolean(saving) || !whatsappPhone(guest.phone)} onClick={() => void markWhatsApp()}>{saving === 'whatsapp' ? 'Guardando…' : 'Marcar WhatsApp enviado'}</button><small>Pulsa después de enviarlo en WhatsApp.</small></>}
+          {!guest.whatsappSentAt && <><button className="row-action" disabled={disabled || Boolean(saving) || !whatsappPhone(guest.phone)} onClick={() => whatsappMutation.mutate()}>{saving === 'whatsapp' ? 'Guardando…' : 'Marcar WhatsApp enviado'}</button><small>Pulsa después de enviarlo en WhatsApp.</small></>}
         </>}
       </div>
       {error && <p className="form-error" role="alert">{error}</p>}
@@ -421,7 +426,7 @@ function GuestPassModal({ guest, token, onClose }: { guest: Guest; token: string
 }
 
 function GuestsPage() {
-  const { data = demoGuests } = useQuery({ queryKey: ['guests'], queryFn: guestQuery })
+  const { data = demoGuests, isPending, isError } = useQuery({ queryKey: ['guests'], queryFn: guestQuery })
   const [search, setSearch] = useState('')
   const [showNew, setShowNew] = useState(false)
   const [filterStatus, setFilterStatus] = useState<'all' | GuestStatus>('all')
@@ -431,6 +436,42 @@ function GuestsPage() {
   const [passLoading, setPassLoading] = useState<string | null>(null)
   const [arrivalLoading, setArrivalLoading] = useState<string | null>(null)
   const [actionError, setActionError] = useState('')
+  const [bulkSending, setBulkSending] = useState(false)
+  const bulkLock = useRef(false)
+  const [bulkNotice, setBulkNotice] = useState('')
+  const individualSends = useIsMutating({ mutationKey: ['invitation-send'] })
+  const pendingEmails = data.filter(canSendPendingEmail)
+  async function sendAllInvitations() {
+    if (bulkLock.current || individualSends || !pendingEmails.length) return
+    bulkLock.current = true
+    setBulkSending(true)
+    setActionError('')
+    setBulkNotice('Revisando invitaciones pendientes…')
+    let sent = 0
+    let skipped = 0
+    let total = 0
+    try {
+      const current = await queryClient.fetchQuery({ queryKey: ['guests'], queryFn: guestQuery, staleTime: 0 })
+      const pending = current.filter(canSendPendingEmail)
+      total = pending.length
+      for (const guest of pending) {
+        setBulkNotice(`Enviando correos: ${sent + skipped} de ${total}. Mantén esta página abierta.`)
+        const result = await sendInvitation(guest.id, false)
+        if (result.error) throw new Error(`${guest.email}: ${result.error.message}`)
+        if (!result.demo && result.data?.ok !== true) throw new Error(`${guest.email}: no se confirmó el envío. Revisa el historial de Make antes de reintentar.`)
+        if (result.data?.already_sent) skipped += 1
+        else sent += 1
+        queryClient.setQueryData<Guest[]>(['guests'], guests => guests?.map(item => item.id === guest.id ? { ...item, invite: 'Enviada' } : item))
+      }
+      setBulkNotice(total ? `${sent} correo(s) enviado(s).${skipped ? ` ${skipped} ya enviado(s) omitido(s).` : ''}` : 'No hay invitaciones por correo pendientes de envío.')
+    } catch (cause) {
+      setBulkNotice(`Envío detenido: ${sent} correo(s) enviado(s), ${skipped} omitido(s) y ${total - sent - skipped} sin completar.`)
+      setActionError(cause instanceof Error ? cause.message : 'No se pudo completar el envío. Revisa el historial de Make antes de reintentar.')
+    } finally {
+      bulkLock.current = false
+      setBulkSending(false)
+    }
+  }
   const fileInput = useRef<HTMLInputElement>(null)
   const filtered = data.filter(g => {
     const emailSent = Boolean(g.email) && g.invite === 'Enviada'
@@ -545,7 +586,7 @@ function GuestsPage() {
     e.target.value = ''
   }
   const count = (status: GuestStatus) => data.filter(g => g.status === status).length
-  return <section className="dashboard"><div className="page-heading"><div><p className="eyebrow orange">Gestión de invitados</p><h2>Lista de invitados <span>{data.length}</span></h2><p className="muted">Consulta respuestas y administra tus invitaciones.</p></div><div className="page-actions"><input ref={fileInput} className="hidden-file" type="file" accept=".csv,text/csv" onChange={importCsv} /><button className="button button-dark" onClick={exportCsv}><Download size={16} /> Exportar CSV</button><button className="button button-dark" onClick={() => fileInput.current?.click()}><Upload size={16} /> Cargar masivamente</button><button className="button button-orange" onClick={() => setShowNew(true)}><Users size={16} /> Agregar invitado</button></div></div><div className="filter-bar"><div className="search-box"><Search size={17} /><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar por nombre, correo, celular o empresa" /></div><label className="filter-button"><Filter size={16} /><select aria-label="Filtrar por respuesta" value={filterStatus} onChange={e => setFilterStatus(e.target.value as 'all' | GuestStatus)}><option value="all">Todos los estados</option><option value="Confirmado">Confirmados</option><option value="Pendiente">Pendientes de respuesta</option><option value="Canceló">Cancelaron</option></select></label><label className="filter-button"><Send size={16} /><select aria-label="Filtrar por envío de invitación" value={filterDelivery} onChange={e => setFilterDelivery(e.target.value)}><option value="all">Todas las invitaciones</option><option value="sent">Enviadas por algún canal</option><option value="pending">Sin enviar por ningún canal</option><option value="email">Correo enviado</option><option value="whatsapp">WhatsApp enviado</option></select></label></div><p className="guest-list-summary" aria-live="polite">Mostrando {filtered.length} de {data.length} invitados · Nombre A–Z</p>{actionError && <p className="form-error guest-action-error">{actionError}</p>}<div className="panel guests-table-panel"><div className="table-tabs"><button className={filterStatus === 'all' ? 'selected' : ''} onClick={() => setFilterStatus('all')}>Todos <b>{data.length}</b></button><button className={filterStatus === 'Confirmado' ? 'selected' : ''} onClick={() => setFilterStatus('Confirmado')}>Confirmados <b>{count('Confirmado')}</b></button><button className={filterStatus === 'Pendiente' ? 'selected' : ''} onClick={() => setFilterStatus('Pendiente')}>Pendientes <b>{count('Pendiente')}</b></button><button className={filterStatus === 'Canceló' ? 'selected' : ''} onClick={() => setFilterStatus('Canceló')}>Cancelaron <b>{count('Canceló')}</b></button></div><div className="table-head"><span>INVITADO</span><span>EMPRESA</span><span>CORREO</span><span>RESPUESTA</span><span>ASISTENCIA</span><span>ACCIONES</span></div>{filtered.length === 0 && <p className="guest-list-empty">No hay invitados que coincidan con estos filtros.</p>}{filtered.map(g => <div className="table-line" key={g.id}><div className="guest-name"><div className="table-avatar">{g.name.split(' ').map(n => n[0]).slice(0, 2).join('')}</div><span><strong>{g.name}</strong><small>{g.email || g.phone}</small></span></div><span>{g.company}</span><InvitationState guest={g} /><span className={`status status-${g.status === 'Confirmado' ? 'confirmed' : g.status === 'Canceló' ? 'cancelled' : 'pending'}`}><i></i>{g.status}</span><span className={g.checkedIn ? 'checked-label' : 'muted'}>{g.checkedIn ? <><CheckCircle2 size={14} /> Presente</> : 'No ha llegado'}</span><div className="guest-row-actions"><button className="row-action" disabled={passLoading === g.id} onClick={() => void openPass(g)}><Eye size={15} /> {passLoading === g.id ? 'Abriendo…' : 'Ver entrada'}</button><button className="row-action arrival-action" disabled={arrivalLoading !== null} onClick={() => void markArrival(g)}><CheckCircle2 size={15} /> {arrivalLoading === g.id ? 'Guardando…' : g.checkedIn ? 'Marcar como no ha llegado' : 'Registrar llegada'}</button><InvitationState guest={g} channel="whatsapp" /></div></div>)}</div>{showNew && <NewGuestModal onClose={() => setShowNew(false)} />}{passGuest && <GuestPassModal guest={passGuest} token={passToken} onClose={() => { setPassGuest(null); setPassToken('') }} />}</section>
+  return <section className="dashboard"><div className="page-heading"><div><p className="eyebrow orange">Gestión de invitados</p><h2>Lista de invitados <span>{data.length}</span></h2><p className="muted">Consulta respuestas y administra tus invitaciones.</p></div><div className="page-actions"><button className="button button-orange" disabled={bulkSending || individualSends > 0 || isPending || isError || pendingEmails.length === 0} onClick={() => void sendAllInvitations()}><Send size={16} /> {bulkSending ? 'Enviando invitaciones…' : `Enviar todas las invitaciones (${pendingEmails.length})`}</button><input ref={fileInput} className="hidden-file" type="file" accept=".csv,text/csv" onChange={importCsv} /><button className="button button-dark" onClick={exportCsv}><Download size={16} /> Exportar CSV</button><button className="button button-dark" onClick={() => fileInput.current?.click()}><Upload size={16} /> Cargar masivamente</button><button className="button button-orange" onClick={() => setShowNew(true)}><Users size={16} /> Agregar invitado</button></div></div><div className="filter-bar"><div className="search-box"><Search size={17} /><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar por nombre, correo, celular o empresa" /></div><label className="filter-button"><Filter size={16} /><select aria-label="Filtrar por respuesta" value={filterStatus} onChange={e => setFilterStatus(e.target.value as 'all' | GuestStatus)}><option value="all">Todos los estados</option><option value="Confirmado">Confirmados</option><option value="Pendiente">Pendientes de respuesta</option><option value="Canceló">Cancelaron</option></select></label><label className="filter-button"><Send size={16} /><select aria-label="Filtrar por envío de invitación" value={filterDelivery} onChange={e => setFilterDelivery(e.target.value)}><option value="all">Todas las invitaciones</option><option value="sent">Enviadas por algún canal</option><option value="pending">Sin enviar por ningún canal</option><option value="email">Correo enviado</option><option value="whatsapp">WhatsApp enviado</option></select></label></div><p className="guest-list-summary" aria-live="polite">Mostrando {filtered.length} de {data.length} invitados · Nombre A–Z</p><p className="guest-list-summary">El envío masivo incluye todos los contactos con correo y sin envíos registrados por correo ni WhatsApp, sin importar los filtros.</p>{bulkNotice && <p className="guest-list-summary" role="status">{bulkNotice}</p>}{actionError && <p className="form-error guest-action-error">{actionError}</p>}<div className="panel guests-table-panel"><div className="table-tabs"><button className={filterStatus === 'all' ? 'selected' : ''} onClick={() => setFilterStatus('all')}>Todos <b>{data.length}</b></button><button className={filterStatus === 'Confirmado' ? 'selected' : ''} onClick={() => setFilterStatus('Confirmado')}>Confirmados <b>{count('Confirmado')}</b></button><button className={filterStatus === 'Pendiente' ? 'selected' : ''} onClick={() => setFilterStatus('Pendiente')}>Pendientes <b>{count('Pendiente')}</b></button><button className={filterStatus === 'Canceló' ? 'selected' : ''} onClick={() => setFilterStatus('Canceló')}>Cancelaron <b>{count('Canceló')}</b></button></div><div className="table-head"><span>INVITADO</span><span>EMPRESA</span><span>CORREO</span><span>RESPUESTA</span><span>ASISTENCIA</span><span>ACCIONES</span></div>{filtered.length === 0 && <p className="guest-list-empty">No hay invitados que coincidan con estos filtros.</p>}{filtered.map(g => <div className="table-line" key={g.id}><div className="guest-name"><div className="table-avatar">{g.name.split(' ').map(n => n[0]).slice(0, 2).join('')}</div><span><strong>{g.name}</strong><small>{g.email || g.phone}</small></span></div><span>{g.company}</span><InvitationState guest={g} disabled={bulkSending} /><span className={`status status-${g.status === 'Confirmado' ? 'confirmed' : g.status === 'Canceló' ? 'cancelled' : 'pending'}`}><i></i>{g.status}</span><span className={g.checkedIn ? 'checked-label' : 'muted'}>{g.checkedIn ? <><CheckCircle2 size={14} /> Presente</> : 'No ha llegado'}</span><div className="guest-row-actions"><button className="row-action" disabled={passLoading === g.id} onClick={() => void openPass(g)}><Eye size={15} /> {passLoading === g.id ? 'Abriendo…' : 'Ver entrada'}</button><button className="row-action arrival-action" disabled={arrivalLoading !== null} onClick={() => void markArrival(g)}><CheckCircle2 size={15} /> {arrivalLoading === g.id ? 'Guardando…' : g.checkedIn ? 'Marcar como no ha llegado' : 'Registrar llegada'}</button><InvitationState guest={g} channel="whatsapp" disabled={bulkSending} /></div></div>)}</div>{showNew && <NewGuestModal onClose={() => setShowNew(false)} />}{passGuest && <GuestPassModal guest={passGuest} token={passToken} onClose={() => { setPassGuest(null); setPassToken('') }} />}</section>
 }
 
 function CheckInPage() {

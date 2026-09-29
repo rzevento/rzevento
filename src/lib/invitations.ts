@@ -1,3 +1,7 @@
+export function canSendPendingEmail(guest: { email: string; invite: string; whatsappSentAt?: string | null }): boolean {
+  return Boolean(guest.email.trim()) && guest.invite !== 'Enviada' && !guest.whatsappSentAt
+}
+
 /** Ten-digit local numbers belong to Mexico; other countries need a country code. */
 export function whatsappPhone(value: string): string | null {
   const input = value.trim()
