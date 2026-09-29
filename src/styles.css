@@ -220,3 +220,6 @@ body { background: var(--bg); color: var(--cream); }
 @media (max-width: 680px) { .filter-bar .filter-button { flex: 1 1 150px; padding: 0 10px; max-width: 100%; } .filter-button select { width: 100%; } }
 .attendance-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; }
 @media (max-width: 600px) { .checkin-result { flex-wrap: wrap; } .attendance-actions { width: 100%; } }
+
+.guest-menu-actions { display: grid; gap: 8px; padding-bottom: 14px; margin-bottom: 14px; border-bottom: 1px solid #e6dfd7; }
+.guest-menu-actions .row-action { width: 100%; justify-content: flex-start; }
