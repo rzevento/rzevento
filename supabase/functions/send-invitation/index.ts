@@ -56,7 +56,7 @@ Deno.serve(async (request) => {
       return json({ error: 'No se pudo consultar la invitación. Revisa los registros de send-invitation en Supabase.' }, 500)
     }
     if (!invitation) return json({ error: 'Este invitado no tiene una invitación asociada al evento' }, 404)
-    if (invitation.sent_at || invitation.status === 'sent') return json({ ok: true, already_sent: true })
+    if ((invitation.sent_at || invitation.status === 'sent') && input?.resend !== true) return json({ ok: true, already_sent: true })
 
     const webhook = Deno.env.get('MAKE_WEBHOOK_URL')?.trim()
     const apiKey = Deno.env.get('MAKE_WEBHOOK_API_KEY')?.trim()

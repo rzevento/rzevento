@@ -290,6 +290,7 @@ function InvitationState({ guest, channel = 'email' }: { guest: Guest; channel?:
   const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0 })
   const [saving, setSaving] = useState<'email' | 'whatsapp' | null>(null)
   const [error, setError] = useState('')
+  const [emailNotice, setEmailNotice] = useState('')
   const isDemo = !supabase
   let whatsappUrl = ''
   let whatsappHint = ''
@@ -301,11 +302,14 @@ function InvitationState({ guest, channel = 'email' }: { guest: Guest; channel?:
     }
   }
   async function sendEmail() {
+    if (saving) return
     setSaving('email')
     setError('')
+    setEmailNotice('')
     try {
-      const result = await sendInvitation(guest.id)
+      const result = await sendInvitation(guest.id, guest.invite === 'Enviada')
       if (result.error) throw result.error
+      setEmailNotice(guest.invite === 'Enviada' ? 'Invitación reenviada' : 'Invitación enviada')
       queryClient.setQueryData<Guest[]>(['guests'], current => (current || demoGuests).map(item => item.id === guest.id ? { ...item, invite: 'Enviada' } : item))
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'No se pudo confirmar el envío. Revisa el historial de Make antes de reintentar.')
@@ -327,7 +331,8 @@ function InvitationState({ guest, channel = 'email' }: { guest: Guest; channel?:
     }
   }
   if (channel === 'email') return <div className="invitation-email">
-    {!guest.email ? <span className="muted">Sin correo</span> : guest.invite === 'Enviada' ? <span className="sent-label"><Send size={13} /> Enviado</span> : <button className="send-inline" disabled={Boolean(saving)} onClick={() => void sendEmail()}>{saving === 'email' ? 'Enviando…' : 'Enviar correo'}</button>}
+    {!guest.email ? <span className="muted">Sin correo</span> : guest.invite === 'Enviada' ? <><span className="sent-label"><Send size={13} /> Enviado</span><button className="send-inline" disabled={Boolean(saving)} onClick={() => void sendEmail()}>{saving === 'email' ? 'Reenviando…' : 'Reenviar invitación'}</button></> : <button className="send-inline" disabled={Boolean(saving)} onClick={() => void sendEmail()}>{saving === 'email' ? 'Enviando…' : 'Enviar correo'}</button>}
+    {emailNotice && <small role="status">{emailNotice}</small>}
     {error && <p className="form-error" role="alert">{error}</p>}
   </div>
   return <>

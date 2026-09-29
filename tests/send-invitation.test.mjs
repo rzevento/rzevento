@@ -82,3 +82,23 @@ test('rejects missing settings and insecure URLs before calling Make', async () 
     const app=setup({env}); assert.equal((await app.call()).status,500); assert.deepEqual(app.counts(),{sends:0,updates:0})
   }
 })
+
+test('explicit resend keeps the personalized link and records a successful delivery', async () => {
+  const app = setup({ alreadySent: true })
+  assert.equal((await app.call({ guest_id: id, resend: true })).status, 200)
+  assert.deepEqual(app.counts(), { sends: 1, updates: 1 })
+  assert.equal(app.payload().invitation_url, 'https://evento.example.com/registro/token')
+})
+test('resend requires boolean true and still enforces admin access', async () => {
+  const app = setup({ alreadySent: true })
+  await app.call({ guest_id: id, resend: 'true' })
+  assert.deepEqual(app.counts(), { sends: 0, updates: 0 })
+  const staff = setup({ alreadySent: true, role: 'staff' })
+  assert.equal((await staff.call({ guest_id: id, resend: true })).status, 403)
+  assert.deepEqual(staff.counts(), { sends: 0, updates: 0 })
+})
+test('a failed resend preserves the previously recorded send', async () => {
+  const app = setup({ alreadySent: true, timeout: true })
+  assert.equal((await app.call({ guest_id: id, resend: true })).status, 502)
+  assert.deepEqual(app.counts(), { sends: 1, updates: 0 })
+})
