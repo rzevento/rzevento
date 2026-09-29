@@ -39,9 +39,9 @@ Antes de publicar esta versión, aplicar en Supabase la migración
 `supabase/migrations/20260929132423_manual_whatsapp_invitations.sql` después de las migraciones existentes.
 Agrega `invitations.whatsapp_sent_at` y la función `mark_whatsapp_invitation_sent`, que conserva la primera fecha del servidor y respeta las políticas RLS de las invitaciones. No cambia `status` ni `sent_at`, que siguen correspondiendo al correo.
 
-En `Admin > Invitados`, cada invitación muestra Correo y WhatsApp por separado:
+En `Admin > Invitados`, el correo tiene su columna y WhatsApp está en el menú de tres puntos al final de cada fila. Un punto verde indica que se registró el envío manual:
 
-1. Pulsa **Abrir WhatsApp** para abrir el mensaje con el enlace personal `/registro/{token}`.
+1. Abre el menú de tres puntos y pulsa **Abrir WhatsApp** para abrir el mensaje con el enlace personal `/registro/{token}`.
 2. Envía el mensaje dentro de WhatsApp.
 3. Regresa y pulsa **Marcar WhatsApp enviado**. Se guarda la fecha y hora, que también se incluye en la exportación CSV.
 

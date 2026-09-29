@@ -188,23 +188,26 @@ body { background: var(--bg); color: var(--cream); }
 .member-form .button { height: 39px; white-space: nowrap; }
 @media (max-width: 760px) { .member-form { grid-template-columns: 1fr 1fr; }.member-form > label:first-of-type { grid-column: 1 / -1; }.member-form .button { grid-column: 1 / -1; width: 100%; } }
 
-/* Email and manual WhatsApp delivery are independent channels. */
-.invitation-channels { display: grid; gap: 12px; min-width: 0; }
-.invitation-channel { display: grid; align-content: start; justify-items: start; gap: 5px; }
-.invitation-channel > strong { color: #665e55; font-size: 10px; }
-.invitation-channel small, .invitation-channel time { color: #81786e; font-size: 10px; line-height: 1.4; white-space: normal; }
-.invitation-channels .sent-label { white-space: normal; }
-.invitation-channels .form-error { margin: 0; font-size: 11px; white-space: normal; }
-.invitation-channel .row-action { white-space: normal; text-align: left; }
+/* Keep delivery actions compact; the native popover escapes table clipping. */
+.invitation-email { min-width: 0; }
+.invitation-email .form-error { white-space: normal; font-size: 11px; }
+.invitation-channel { display: grid; align-content: start; justify-items: start; gap: 10px; }
+.invitation-channel small, .invitation-channel time { color: #81786e; font-size: 11px; line-height: 1.4; white-space: normal; }
 .whatsapp-action { color: #286341; text-decoration: none; }
-.table-head, .table-line { grid-template-columns: minmax(150px, 2fr) .8fr minmax(175px, 1.4fr) .9fr .8fr minmax(150px, 1.2fr); }
+.whatsapp-menu-trigger { position: relative; padding: 7px; align-self: center; flex: 0 0 auto !important; }
+.whatsapp-sent-dot { position: absolute; right: 2px; top: 2px; width: 6px; height: 6px; border-radius: 50%; background: #42815e; }
+.whatsapp-popover { position: fixed; inset: auto; margin: 0; width: 280px; max-width: calc(100vw - 24px); max-height: min(400px, calc(100dvh - 24px)); overflow-y: auto; padding: 16px; border: 1px solid #d8d0c5; border-radius: 10px; background: #fffdf9; color: #655d54; box-shadow: 0 12px 36px #241f1a26; font-size: 12px; }
+.whatsapp-popover-heading { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+.whatsapp-popover-heading strong { color: #241f1a; font-size: 14px; }
+.whatsapp-guest-name { display: block; margin-bottom: 14px; overflow-wrap: anywhere; }
+.whatsapp-popover .row-action { white-space: normal; text-align: left; padding: 9px 10px; }
+.whatsapp-popover .form-error { font-size: 11px; margin-bottom: 0; }
+.table-head, .table-line { grid-template-columns: minmax(150px, 2fr) 1fr minmax(90px, .85fr) .9fr .8fr minmax(175px, 1.3fr); }
 @media (min-width: 681px) and (max-width: 1200px) {
   .guests-table-panel { overflow-x: auto; }
-  .guests-table-panel .table-head, .guests-table-panel .table-line { min-width: 930px; }
+  .guests-table-panel .table-head, .guests-table-panel .table-line { min-width: 900px; }
 }
 @media (max-width: 680px) {
   .table-head, .table-line { grid-template-columns: minmax(0, 1fr) auto; }
-  .table-line > .invitation-channels { grid-column: 1 / -1; grid-row: auto; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); margin: 8px 0; padding: 12px 0; border-top: 1px solid #eee8e0; border-bottom: 1px solid #eee8e0; }
-  .table-line > .guest-name { grid-row: auto; }
-  .invitation-channels .form-error { grid-column: 1 / -1; }
+  .table-line > .invitation-email { grid-column: 2; }
 }
