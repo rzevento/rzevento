@@ -2,11 +2,11 @@ import { StrictMode, useEffect, useId, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { QueryClient, QueryClientProvider, useIsMutating, useMutation, useQuery } from '@tanstack/react-query'
 import { createRootRoute, createRoute, createRouter, Link, Outlet, RouterProvider, useNavigate, useParams } from '@tanstack/react-router'
-import { AlertCircle, ArrowRight, CalendarDays, Camera, Check, CheckCircle2, ChevronDown, Clock3, Download, Eye, EyeOff, Filter, LayoutDashboard, LockKeyhole, MapPin, Menu, MoreHorizontal, QrCode, Search, Send, Settings2, ShieldCheck, Upload, Users, X } from 'lucide-react'
+import { AlertCircle, ArrowRight, CalendarDays, Camera, Check, CheckCircle2, ChevronDown, Clock3, Download, Eye, EyeOff, Filter, LayoutDashboard, LockKeyhole, MapPin, Menu, MoreHorizontal, Pencil, Trash2, QrCode, Search, Send, Settings2, ShieldCheck, Upload, Users, X } from 'lucide-react'
 import { jsPDF } from 'jspdf'
 import QRCode from 'qrcode'
 import { Html5Qrcode } from 'html5-qrcode'
-import { addEventMember, beginRsvp, cancelRsvp, checkInGuest, undoCheckInGuest, createGuest, findGuestByQr, getCurrentOrganizerProfile, getEventMembers, getInvitationToken, getInvitationDetails, markWhatsAppInvitationSent, sendInvitation, submitRsvp, supabase } from './lib/supabase'
+import { addEventMember, beginRsvp, cancelRsvp, checkInGuest, undoCheckInGuest, createGuest, updateGuest, deleteGuest, markGuestCancelled, findGuestByQr, getCurrentOrganizerProfile, getEventMembers, getInvitationToken, getInvitationDetails, markWhatsAppInvitationSent, sendInvitation, submitRsvp, supabase } from './lib/supabase'
 import { canSendPendingEmail, whatsappInvitationUrl, whatsappPhone } from './lib/invitations'
 import './styles.css'
 
@@ -387,30 +387,55 @@ function InvitationState({ guest, channel = 'email', disabled = false }: { guest
   </>
 }
 
-function NewGuestModal({ onClose }: { onClose: () => void }) {
-  const [form, setForm] = useState({ name: '', email: '', phone: '', origin: '', company: '' })
+function GuestFormModal({ guest, onClose }: { guest?: Guest; onClose: () => void }) {
+  const [form, setForm] = useState({
+    name: guest?.name === 'Invitado pendiente' ? '' : guest?.name || '',
+    email: guest?.email || '', phone: guest?.phone || '',
+    origin: guest?.origin === 'Sin origen' ? '' : guest?.origin || '',
+    company: guest?.company === 'Sin empresa' ? '' : guest?.company || '',
+  })
   const [saving, setSaving] = useState(false)
+  const saveLock = useRef(false)
   const [error, setError] = useState('')
+  const close = () => { if (!saveLock.current) onClose() }
   async function save(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
-    if (!form.email.trim() && !form.phone.trim()) {
-      setError('Captura un correo o un celular.')
-      return
-    }
+    if (saveLock.current) return
+    setError('')
+    if (!form.email.trim() && !form.phone.trim()) { setError('Captura un correo o un celular.'); return }
+    if (form.phone.trim() && !whatsappPhone(form.phone)) { setError('Revisa el celular: usa 10 dígitos para México o + y el código de país.'); return }
+    saveLock.current = true
     setSaving(true)
-    const result = await createGuest(form)
-    setSaving(false)
-    if (result.error) {
-      const errorCode = 'code' in result.error ? result.error.code : ''
-      const isDuplicate = errorCode === '23505' || /duplicate key|unique constraint|guests_event_(email|phone)_key/i.test(result.error.message || '')
-      setError(isDuplicate ? 'No se pudo guardar al invitado porque el correo o celular ya está en la lista.' : 'No se pudo guardar al invitado. Intenta nuevamente.')
-      return
-    }
-    if (result.demo) queryClient.setQueryData<Guest[]>(['guests'], current => [...(current || demoGuests), { id: `demo-${Date.now()}`, name: form.name || 'Invitado pendiente', company: 'Sin empresa', email: form.email, phone: form.phone, origin: 'Sin origen', invite: 'Pendiente', status: 'Pendiente', checkedIn: false }])
-    else await queryClient.invalidateQueries({ queryKey: ['guests'] })
-    onClose()
+    try {
+      const result = guest ? await updateGuest(guest.id, form) : await createGuest(form)
+      if (result.error) throw result.error
+      await queryClient.cancelQueries({ queryKey: ['guests'] })
+      const changes = { name: form.name.trim() || 'Invitado pendiente', company: form.company.trim() || 'Sin empresa', email: form.email.trim(), phone: form.phone.trim(), origin: form.origin.trim() || 'Sin origen' }
+      if (guest) queryClient.setQueryData<Guest[]>(['guests'], current => (current || demoGuests).map(item => item.id === guest.id ? { ...item, ...changes } : item))
+      else if (result.demo) queryClient.setQueryData<Guest[]>(['guests'], current => [...(current || demoGuests), { id: `demo-${crypto.randomUUID()}`, ...changes, invite: 'Pendiente', status: 'Pendiente', checkedIn: false }])
+      if (!result.demo) await queryClient.invalidateQueries({ queryKey: ['guests'] })
+      onClose()
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : typeof cause === 'object' && cause && 'message' in cause ? String(cause.message) : ''
+      const duplicate = (typeof cause === 'object' && cause && 'code' in cause && cause.code === '23505') || /duplicate key|unique constraint/i.test(message)
+      setError(duplicate ? 'No se pudo guardar: el correo o celular ya está registrado para otro invitado.' : 'No se pudo guardar al invitado. Revisa tu conexión y permisos e intenta nuevamente.')
+    } finally { saveLock.current = false; setSaving(false) }
   }
-  return <div className="modal-backdrop" onMouseDown={onClose}><div className="modal-card" onMouseDown={e => e.stopPropagation()}><button className="modal-close" onClick={onClose} aria-label="Cerrar">×</button><p className="eyebrow orange">Nueva invitación</p><h2>Agregar invitado</h2><p className="muted">Captura el correo o celular con el que fue invitado. El nombre puede completarse después.</p><form onSubmit={save}><label>Nombre completo <small>(opcional)</small><input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="Si ya lo tienes" /></label><label>Correo electrónico <small>(opcional si registras celular)</small><input type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} placeholder="nombre@empresa.com" /></label><label>Celular <small>(opcional si registras correo)</small><input value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} placeholder="México: 10 dígitos · Otros: +código de país" /></label>{error && <p className="form-error">{error}</p>}<button className="button button-orange" disabled={saving}>{saving ? 'Guardando…' : 'Crear invitación'} <ArrowRight size={16} /></button></form></div></div>
+  return <div className="modal-backdrop" onMouseDown={close}><div className="modal-card guest-form-modal" role="dialog" aria-modal="true" aria-labelledby="guest-form-title" onMouseDown={e => e.stopPropagation()}>
+    <button className="modal-close" disabled={saving} onClick={close} aria-label="Cerrar">×</button>
+    <p className="eyebrow orange">{guest ? 'Datos del invitado' : 'Nueva invitación'}</p><h2 id="guest-form-title">{guest ? 'Editar invitado' : 'Agregar invitado'}</h2>
+    <p className="muted">{guest ? 'Corrige sus datos conservando su enlace personal y su respuesta. Guardar no envía ninguna invitación.' : 'Captura el correo o celular con el que fue invitado. El nombre puede completarse después.'}</p>
+    {guest?.invite === 'Enviada' && <p className="muted">Si corriges el correo, guarda y pulsa «Reenviar invitación» en la lista para enviarla a la dirección correcta.</p>}
+    <form onSubmit={save}>
+      <label>Nombre completo <small>(opcional)</small><input disabled={saving} value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="Si ya lo tienes" /></label>
+      <label>Correo electrónico <small>(opcional si registras celular)</small><input type="email" disabled={saving} value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} placeholder="nombre@empresa.com" /></label>
+      <label>Celular <small>(opcional si registras correo)</small><input type="tel" disabled={saving} value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} placeholder="México: 10 dígitos · Otros: +código de país" /></label>
+      <label>Empresa<input disabled={saving} value={form.company} onChange={e => setForm({ ...form, company: e.target.value })} /></label>
+      <label>Procedencia<input disabled={saving} value={form.origin} onChange={e => setForm({ ...form, origin: e.target.value })} /></label>
+      {error && <p className="form-error" role="alert">{error}</p>}
+      <button className="button button-orange" disabled={saving}>{saving ? 'Guardando…' : guest ? 'Guardar cambios' : 'Crear invitación'} <ArrowRight size={16} /></button>
+    </form>
+  </div></div>
 }
 
 function GuestPassModal({ guest, token, onClose }: { guest: Guest; token: string; onClose: () => void }) {
@@ -429,6 +454,11 @@ function GuestsPage() {
   const { data = demoGuests, isPending, isError } = useQuery({ queryKey: ['guests'], queryFn: guestQuery })
   const [search, setSearch] = useState('')
   const [showNew, setShowNew] = useState(false)
+  const [editingGuest, setEditingGuest] = useState<Guest | null>(null)
+  const [deletingGuest, setDeletingGuest] = useState<string | null>(null)
+  const deleteLock = useRef(false)
+  const [cancellingGuest, setCancellingGuest] = useState<string | null>(null)
+  const cancelLock = useRef(false)
   const [filterStatus, setFilterStatus] = useState<'all' | GuestStatus>('all')
   const [filterDelivery, setFilterDelivery] = useState('all')
   const [passGuest, setPassGuest] = useState<Guest | null>(null)
@@ -442,7 +472,7 @@ function GuestsPage() {
   const individualSends = useIsMutating({ mutationKey: ['invitation-send'] })
   const pendingEmails = data.filter(canSendPendingEmail)
   async function sendAllInvitations() {
-    if (bulkLock.current || individualSends || !pendingEmails.length) return
+    if (bulkLock.current || individualSends || deleteLock.current || editingGuest || !pendingEmails.length) return
     bulkLock.current = true
     setBulkSending(true)
     setActionError('')
@@ -484,6 +514,38 @@ function GuestsPage() {
     return `${g.name} ${g.company} ${g.email} ${g.phone}`.toLocaleLowerCase('es').includes(search.trim().toLocaleLowerCase('es'))
       && (filterStatus === 'all' || g.status === filterStatus) && deliveryMatches
   }).sort((a, b) => a.name.trim().localeCompare(b.name.trim(), 'es', { sensitivity: 'base', numeric: true }) || a.id.localeCompare(b.id))
+  async function cancelGuest(guest: Guest) {
+    if (cancelLock.current || deleteLock.current || guest.status === 'Canceló') return
+    if (!window.confirm(`¿Marcar que ${guest.name} canceló su asistencia? Se conservarán sus datos y su invitación.`)) return
+    cancelLock.current = true
+    setCancellingGuest(guest.id)
+    setActionError('')
+    try {
+      const result = await markGuestCancelled(guest.id)
+      if (result.error) throw result.error
+      await queryClient.cancelQueries({ queryKey: ['guests'] })
+      queryClient.setQueryData<Guest[]>(['guests'], current => (current || demoGuests).map(item => item.id === guest.id ? { ...item, status: 'Canceló' } : item))
+      if (!result.demo) await queryClient.invalidateQueries({ queryKey: ['guests'] })
+    } catch {
+      setActionError('No se pudo registrar la cancelación. Revisa tu conexión y permisos e intenta nuevamente.')
+    } finally { cancelLock.current = false; setCancellingGuest(null) }
+  }
+  async function removeGuest(guest: Guest) {
+    if (deleteLock.current || cancelLock.current || bulkLock.current || individualSends || arrivalLoading) return
+    if (!window.confirm(`¿Eliminar a ${guest.name} (${guest.email || guest.phone})?\n\nTambién se eliminarán su invitación, su respuesta y su registro de llegada. Su enlace personal dejará de funcionar. Esta acción no se puede deshacer.`)) return
+    deleteLock.current = true
+    setDeletingGuest(guest.id)
+    setActionError('')
+    try {
+      const result = await deleteGuest(guest.id)
+      if (result.error) throw result.error
+      await queryClient.cancelQueries({ queryKey: ['guests'] })
+      queryClient.setQueryData<Guest[]>(['guests'], current => (current || demoGuests).filter(item => item.id !== guest.id))
+      if (!result.demo) await queryClient.invalidateQueries({ queryKey: ['guests'] })
+    } catch {
+      setActionError('No se pudo eliminar al invitado. Revisa tu conexión y permisos e intenta nuevamente.')
+    } finally { deleteLock.current = false; setDeletingGuest(null) }
+  }
   async function openPass(guest: Guest) {
     setActionError('')
     setPassLoading(guest.id)
@@ -586,7 +648,7 @@ function GuestsPage() {
     e.target.value = ''
   }
   const count = (status: GuestStatus) => data.filter(g => g.status === status).length
-  return <section className="dashboard"><div className="page-heading"><div><p className="eyebrow orange">Gestión de invitados</p><h2>Lista de invitados <span>{data.length}</span></h2><p className="muted">Consulta respuestas y administra tus invitaciones.</p></div><div className="page-actions"><button className="button button-orange" disabled={bulkSending || individualSends > 0 || isPending || isError || pendingEmails.length === 0} onClick={() => void sendAllInvitations()}><Send size={16} /> {bulkSending ? 'Enviando invitaciones…' : `Enviar todas las invitaciones (${pendingEmails.length})`}</button><input ref={fileInput} className="hidden-file" type="file" accept=".csv,text/csv" onChange={importCsv} /><button className="button button-dark" onClick={exportCsv}><Download size={16} /> Exportar CSV</button><button className="button button-dark" onClick={() => fileInput.current?.click()}><Upload size={16} /> Cargar masivamente</button><button className="button button-orange" onClick={() => setShowNew(true)}><Users size={16} /> Agregar invitado</button></div></div><div className="filter-bar"><div className="search-box"><Search size={17} /><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar por nombre, correo, celular o empresa" /></div><label className="filter-button"><Filter size={16} /><select aria-label="Filtrar por respuesta" value={filterStatus} onChange={e => setFilterStatus(e.target.value as 'all' | GuestStatus)}><option value="all">Todos los estados</option><option value="Confirmado">Confirmados</option><option value="Pendiente">Pendientes de respuesta</option><option value="Canceló">Cancelaron</option></select></label><label className="filter-button"><Send size={16} /><select aria-label="Filtrar por envío de invitación" value={filterDelivery} onChange={e => setFilterDelivery(e.target.value)}><option value="all">Todas las invitaciones</option><option value="sent">Enviadas por algún canal</option><option value="pending">Sin enviar por ningún canal</option><option value="email">Correo enviado</option><option value="whatsapp">WhatsApp enviado</option></select></label></div><p className="guest-list-summary" aria-live="polite">Mostrando {filtered.length} de {data.length} invitados · Nombre A–Z</p><p className="guest-list-summary">El envío masivo incluye todos los contactos con correo y sin envíos registrados por correo ni WhatsApp, sin importar los filtros.</p>{bulkNotice && <p className="guest-list-summary" role="status">{bulkNotice}</p>}{actionError && <p className="form-error guest-action-error">{actionError}</p>}<div className="panel guests-table-panel"><div className="table-tabs"><button className={filterStatus === 'all' ? 'selected' : ''} onClick={() => setFilterStatus('all')}>Todos <b>{data.length}</b></button><button className={filterStatus === 'Confirmado' ? 'selected' : ''} onClick={() => setFilterStatus('Confirmado')}>Confirmados <b>{count('Confirmado')}</b></button><button className={filterStatus === 'Pendiente' ? 'selected' : ''} onClick={() => setFilterStatus('Pendiente')}>Pendientes <b>{count('Pendiente')}</b></button><button className={filterStatus === 'Canceló' ? 'selected' : ''} onClick={() => setFilterStatus('Canceló')}>Cancelaron <b>{count('Canceló')}</b></button></div><div className="table-head"><span>INVITADO</span><span>EMPRESA</span><span>CORREO</span><span>RESPUESTA</span><span>ASISTENCIA</span><span>ACCIONES</span></div>{filtered.length === 0 && <p className="guest-list-empty">No hay invitados que coincidan con estos filtros.</p>}{filtered.map(g => <div className="table-line" key={g.id}><div className="guest-name"><div className="table-avatar">{g.name.split(' ').map(n => n[0]).slice(0, 2).join('')}</div><span><strong>{g.name}</strong><small>{g.email || g.phone}</small></span></div><span>{g.company}</span><InvitationState guest={g} disabled={bulkSending} /><span className={`status status-${g.status === 'Confirmado' ? 'confirmed' : g.status === 'Canceló' ? 'cancelled' : 'pending'}`}><i></i>{g.status}</span><span className={g.checkedIn ? 'checked-label' : 'muted'}>{g.checkedIn ? <><CheckCircle2 size={14} /> Presente</> : 'No ha llegado'}</span><div className="guest-row-actions"><button className="row-action" disabled={passLoading === g.id} onClick={() => void openPass(g)}><Eye size={15} /> {passLoading === g.id ? 'Abriendo…' : 'Ver entrada'}</button><button className="row-action arrival-action" disabled={arrivalLoading !== null} onClick={() => void markArrival(g)}><CheckCircle2 size={15} /> {arrivalLoading === g.id ? 'Guardando…' : g.checkedIn ? 'Marcar como no ha llegado' : 'Registrar llegada'}</button><InvitationState guest={g} channel="whatsapp" disabled={bulkSending} /></div></div>)}</div>{showNew && <NewGuestModal onClose={() => setShowNew(false)} />}{passGuest && <GuestPassModal guest={passGuest} token={passToken} onClose={() => { setPassGuest(null); setPassToken('') }} />}</section>
+  return <section className="dashboard"><div className="page-heading"><div><p className="eyebrow orange">Gestión de invitados</p><h2>Lista de invitados <span>{data.length}</span></h2><p className="muted">Consulta respuestas y administra tus invitaciones.</p></div><div className="page-actions"><button className="button button-orange" disabled={bulkSending || deletingGuest !== null || editingGuest !== null || individualSends > 0 || isPending || isError || pendingEmails.length === 0} onClick={() => void sendAllInvitations()}><Send size={16} /> {bulkSending ? 'Enviando invitaciones…' : `Enviar todas las invitaciones (${pendingEmails.length})`}</button><input ref={fileInput} className="hidden-file" type="file" accept=".csv,text/csv" onChange={importCsv} /><button className="button button-dark" onClick={exportCsv}><Download size={16} /> Exportar CSV</button><button className="button button-dark" onClick={() => fileInput.current?.click()}><Upload size={16} /> Cargar masivamente</button><button className="button button-orange" onClick={() => setShowNew(true)}><Users size={16} /> Agregar invitado</button></div></div><div className="filter-bar"><div className="search-box"><Search size={17} /><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar por nombre, correo, celular o empresa" /></div><label className="filter-button"><Filter size={16} /><select aria-label="Filtrar por respuesta" value={filterStatus} onChange={e => setFilterStatus(e.target.value as 'all' | GuestStatus)}><option value="all">Todos los estados</option><option value="Confirmado">Confirmados</option><option value="Pendiente">Pendientes de respuesta</option><option value="Canceló">Cancelaron</option></select></label><label className="filter-button"><Send size={16} /><select aria-label="Filtrar por envío de invitación" value={filterDelivery} onChange={e => setFilterDelivery(e.target.value)}><option value="all">Todas las invitaciones</option><option value="sent">Enviadas por algún canal</option><option value="pending">Sin enviar por ningún canal</option><option value="email">Correo enviado</option><option value="whatsapp">WhatsApp enviado</option></select></label></div><p className="guest-list-summary" aria-live="polite">Mostrando {filtered.length} de {data.length} invitados · Nombre A–Z</p><p className="guest-list-summary">El envío masivo incluye todos los contactos con correo y sin envíos registrados por correo ni WhatsApp, sin importar los filtros.</p>{bulkNotice && <p className="guest-list-summary" role="status">{bulkNotice}</p>}{actionError && <p className="form-error guest-action-error">{actionError}</p>}<div className="panel guests-table-panel"><div className="table-tabs"><button className={filterStatus === 'all' ? 'selected' : ''} onClick={() => setFilterStatus('all')}>Todos <b>{data.length}</b></button><button className={filterStatus === 'Confirmado' ? 'selected' : ''} onClick={() => setFilterStatus('Confirmado')}>Confirmados <b>{count('Confirmado')}</b></button><button className={filterStatus === 'Pendiente' ? 'selected' : ''} onClick={() => setFilterStatus('Pendiente')}>Pendientes <b>{count('Pendiente')}</b></button><button className={filterStatus === 'Canceló' ? 'selected' : ''} onClick={() => setFilterStatus('Canceló')}>Cancelaron <b>{count('Canceló')}</b></button></div><div className="table-head"><span>INVITADO</span><span>EMPRESA</span><span>CORREO</span><span>RESPUESTA</span><span>ASISTENCIA</span><span>ACCIONES</span></div>{filtered.length === 0 && <p className="guest-list-empty">No hay invitados que coincidan con estos filtros.</p>}{filtered.map(g => <div className="table-line" key={g.id}><div className="guest-name"><div className="table-avatar">{g.name.split(' ').map(n => n[0]).slice(0, 2).join('')}</div><span><strong>{g.name}</strong><small>{g.email || g.phone}</small></span></div><span>{g.company}</span><InvitationState guest={g} disabled={bulkSending || deletingGuest !== null || editingGuest !== null} /><span className={`status status-${g.status === 'Confirmado' ? 'confirmed' : g.status === 'Canceló' ? 'cancelled' : 'pending'}`}><i></i>{g.status}</span><span className={g.checkedIn ? 'checked-label' : 'muted'}>{g.checkedIn ? <><CheckCircle2 size={14} /> Presente</> : 'No ha llegado'}</span><div className="guest-row-actions"><button className="row-action" disabled={cancellingGuest !== null || deletingGuest !== null || g.status === 'Canceló'} onClick={() => void cancelGuest(g)}><X size={15} /> {cancellingGuest === g.id ? 'Guardando…' : g.status === 'Canceló' ? 'Cancelación registrada' : 'Marcar como canceló'}</button><button className="row-action" disabled={bulkSending || individualSends > 0 || deletingGuest !== null} onClick={() => setEditingGuest(g)}><Pencil size={15} /> Editar</button><button className="row-action" disabled={bulkSending || individualSends > 0 || deletingGuest !== null || cancellingGuest !== null || arrivalLoading !== null} onClick={() => void removeGuest(g)}><Trash2 size={15} /> {deletingGuest === g.id ? 'Eliminando…' : 'Eliminar'}</button><button className="row-action" disabled={passLoading === g.id} onClick={() => void openPass(g)}><Eye size={15} /> {passLoading === g.id ? 'Abriendo…' : 'Ver entrada'}</button><button className="row-action arrival-action" disabled={arrivalLoading !== null || deletingGuest !== null} onClick={() => void markArrival(g)}><CheckCircle2 size={15} /> {arrivalLoading === g.id ? 'Guardando…' : g.checkedIn ? 'Marcar como no ha llegado' : 'Registrar llegada'}</button><InvitationState guest={g} channel="whatsapp" disabled={bulkSending || deletingGuest !== null || editingGuest !== null} /></div></div>)}</div>{showNew && <GuestFormModal onClose={() => setShowNew(false)} />}{editingGuest && <GuestFormModal key={editingGuest.id} guest={editingGuest} onClose={() => setEditingGuest(null)} />}{passGuest && <GuestPassModal guest={passGuest} token={passToken} onClose={() => { setPassGuest(null); setPassToken('') }} />}</section>
 }
 
 function CheckInPage() {

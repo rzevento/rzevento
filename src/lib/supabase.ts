@@ -87,6 +87,36 @@ export async function createGuest(input: { name: string; email: string; phone: s
   return { data: { guest, invitation: invitation.data }, error: invitation.error, demo: false }
 }
 
+export async function updateGuest(guestId: string, input: { name: string; email: string; phone: string; origin: string; company: string }) {
+  if (!input.email.trim() && !input.phone.trim()) return { data: null, error: new Error('Captura un correo o un celular.'), demo: !supabase }
+  if (!supabase) return { data: null, error: null, demo: true }
+  const { data, error } = await supabase.from('guests').update({
+    full_name: input.name.trim() || null,
+    email: input.email.trim() || null,
+    phone: input.phone.trim() || null,
+    origin: input.origin.trim() || null,
+    company: input.company.trim() || null,
+  }).eq('id', guestId).select('id').single()
+  return { data, error: error || (!data ? new Error('No se pudo actualizar al invitado. Revisa tu acceso.') : null), demo: false }
+}
+
+export async function deleteGuest(guestId: string) {
+  if (!supabase) return { data: null, error: null, demo: true }
+  // Related invitations, RSVPs and check-ins are deleted by the existing foreign keys.
+  const { data, error } = await supabase.from('guests').delete().eq('id', guestId).select('id').single()
+  return { data, error: error || (!data ? new Error('No se pudo eliminar al invitado. Revisa tu acceso.') : null), demo: false }
+}
+
+export async function markGuestCancelled(guestId: string) {
+  if (!supabase) return { data: null, error: null, demo: true }
+  const { data: guest, error: guestError } = await supabase.from('guests').select('event_id').eq('id', guestId).single()
+  if (guestError || !guest) return { data: null, error: guestError || new Error('Invitado no encontrado.'), demo: false }
+  const { data, error } = await supabase.from('rsvps').upsert({
+    event_id: guest.event_id, guest_id: guestId, status: 'cancelled', updated_at: new Date().toISOString(),
+  }, { onConflict: 'event_id,guest_id' }).select('guest_id').single()
+  return { data, error: error || (!data ? new Error('No se pudo registrar la cancelación.') : null), demo: false }
+}
+
 export async function checkInGuest(guestId: string) {
   if (!supabase) return { data: null, error: null, demo: true }
   const { data: activeEvent, error: eventError } = await supabase.from('events').select('id').order('created_at', { ascending: false }).limit(1).maybeSingle()
