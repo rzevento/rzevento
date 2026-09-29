@@ -32,7 +32,7 @@ Deno.serve(async (request) => {
       return json({ error: 'guest_id debe ser el UUID de un invitado' }, 400)
     }
 
-    // Read through the user's RLS before using the privileged client.
+    // Keep database reads and writes scoped to the authenticated organizer's RLS.
     const userClient = createClient(supabaseUrl, publicKey, {
       global: { headers: { Authorization: authorization } },
       auth: { persistSession: false, autoRefreshToken: false },
@@ -45,10 +45,17 @@ Deno.serve(async (request) => {
     if (memberError || member?.role !== 'admin') return json({ error: 'Solo un administrador puede enviar invitaciones' }, 403)
     if (!guest.email) return json({ error: 'Este invitado no tiene correo electrónico' }, 400)
 
-    const admin = createClient(supabaseUrl, secretKey, { auth: { persistSession: false, autoRefreshToken: false } })
+    const admin = userClient
     const { data: invitation, error: invitationError } = await admin.from('invitations')
       .select('id, token, status, sent_at').eq('event_id', guest.event_id).eq('guest_id', guest.id).maybeSingle()
-    if (invitationError || !invitation) return json({ error: 'Invitación no encontrada' }, 404)
+    if (invitationError) {
+      console.error('send-invitation: invitation lookup failed', {
+        code: invitationError.code,
+        message: invitationError.message,
+      })
+      return json({ error: 'No se pudo consultar la invitación. Revisa los registros de send-invitation en Supabase.' }, 500)
+    }
+    if (!invitation) return json({ error: 'Este invitado no tiene una invitación asociada al evento' }, 404)
     if (invitation.sent_at || invitation.status === 'sent') return json({ ok: true, already_sent: true })
 
     const webhook = Deno.env.get('MAKE_WEBHOOK_URL')?.trim()

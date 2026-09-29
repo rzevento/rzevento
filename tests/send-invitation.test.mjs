@@ -10,15 +10,21 @@ const id = '00000000-0000-0000-0000-000000000001'
 function setup(options = {}) {
   let handler, sends = 0, updates = 0, sentPayload
   const env = { SUPABASE_URL: 'https://test.supabase.co', SUPABASE_ANON_KEY: 'public', SUPABASE_SERVICE_ROLE_KEY: 'secret', MAKE_WEBHOOK_URL: 'https://hook.make.com/test', MAKE_WEBHOOK_API_KEY: 'test-key', PUBLIC_SITE_URL: 'https://evento.example.com', ...options.env }
-  const createClient = () => ({
+  const createClient = (_url, key, config) => ({
     auth: { getUser: async () => ({ data: { user: options.invalidAuth ? null : { id: 'admin' } }, error: null }) },
     from(table) {
+      if (table === 'invitations') {
+        assert.equal(key, 'public')
+        assert.equal(config.global?.headers.Authorization, 'Bearer valid')
+      }
       let updating = false
       const chain = {
         select() { return chain }, eq() { return chain },
         update(values) { updates++; updating = true; assert.equal(values.status, 'sent'); assert.equal('whatsapp_sent_at' in values, false); return chain },
         async maybeSingle() {
           if (updating) return { data: options.updateError ? null : {id}, error: options.updateError ? new Error('db') : null }
+          if (table === 'invitations' && options.invitationError) return { data: null, error: { code: '42501', message: 'permission denied' } }
+          if (table === 'invitations' && options.noInvitation) return { data: null, error: null }
           const data = table === 'guests' ? (options.noGuest ? null : { id, event_id: 'event', full_name: '<Ana>', email: options.noEmail ? null : 'ana@example.com' }) : table === 'event_members' ? {role: options.role || 'admin'} : {id, token: 'token', status: options.alreadySent ? 'sent' : 'pending', sent_at: null}
           return { data, error: null }
         },
@@ -27,7 +33,7 @@ function setup(options = {}) {
     },
   })
   vm.runInNewContext(compiled, {
-    createClient, URL, Response, AbortSignal,
+    createClient, URL, Response, AbortSignal, console: { error() {} },
     Deno: { env: { get: key => env[key] }, serve: fn => { handler = fn } },
     fetch: async (url, init) => {
       sends++; assert.equal(url, env.MAKE_WEBHOOK_URL); assert.equal(init.headers['x-make-apikey'], 'test-key')
@@ -55,6 +61,18 @@ test('Accepted, malformed JSON, false acknowledgements, failures and timeouts ne
 })
 test('does not resend invitations already recorded as sent', async () => {
   const app=setup({alreadySent:true}); assert.equal((await app.call()).status,200); assert.deepEqual(app.counts(),{sends:0,updates:0})
+})
+test('distinguishes a failed lookup from a missing invitation without sending mail', async () => {
+  for (const [options, status, message] of [
+    [{ invitationError: true }, 500, 'No se pudo consultar la invitación. Revisa los registros de send-invitation en Supabase.'],
+    [{ noInvitation: true }, 404, 'Este invitado no tiene una invitación asociada al evento'],
+  ]) {
+    const app = setup(options)
+    const response = await app.call()
+    assert.equal(response.status, status)
+    assert.equal((await response.json()).error, message)
+    assert.deepEqual(app.counts(), { sends: 0, updates: 0 })
+  }
 })
 test('reports a save failure after successful delivery without retrying Make', async () => {
   const app=setup({updateError:true}); assert.equal((await app.call()).status,500); assert.deepEqual(app.counts(),{sends:1,updates:1})
