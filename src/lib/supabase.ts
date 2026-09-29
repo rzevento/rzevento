@@ -89,6 +89,14 @@ export async function checkInGuest(guestId: string) {
   return { data, error, demo: false }
 }
 
+export async function undoCheckInGuest(guestId: string) {
+  if (!supabase) return { data: null, error: null, demo: true }
+  const { data: activeEvent, error: eventError } = await supabase.from('events').select('id').order('created_at', { ascending: false }).limit(1).maybeSingle()
+  if (eventError || !activeEvent) return { data: null, error: eventError || new Error('No active event'), demo: false }
+  const { data, error } = await supabase.from('check_ins').delete().eq('event_id', activeEvent.id).eq('guest_id', guestId).select('id').single()
+  return { data, error, demo: false }
+}
+
 export async function getInvitationToken(guestId: string) {
   if (!supabase) return { data: 'demo-token', error: null, demo: true }
   const { data, error } = await supabase.from('invitations').select('token').eq('guest_id', guestId).maybeSingle()
