@@ -30,13 +30,13 @@ test('encodes the personal link and special characters in the prepared message',
   const url = new URL(whatsappInvitationUrl('3312345678', 'Ana & José', 'token-personal', 'https://evento.example.com/'))
   assert.equal(url.origin, 'https://wa.me')
   assert.equal(url.pathname, '/523312345678')
-  assert.ok(url.searchParams.get('text')?.includes('Hola Ana & José,'))
+  assert.ok(url.searchParams.get('text')?.includes('Apreciable Ana & José:'))
   assert.ok(url.searchParams.get('text')?.includes('https://evento.example.com/registro/token-personal'))
 })
 
 test('does not expose placeholder names or create links without a token', () => {
   const url = new URL(whatsappInvitationUrl('3312345678', 'Invitado pendiente', 'token', 'https://evento.example.com'))
-  assert.ok(url.searchParams.get('text')?.startsWith('Hola,'))
+  assert.ok(url.searchParams.get('text')?.startsWith('Reciba un cordial saludo.'))
   assert.throws(() => whatsappInvitationUrl('3312345678', 'Ana', '', 'https://evento.example.com'))
 })
 

@@ -24,7 +24,7 @@ export function whatsappInvitationUrl(phone: string, name: string, token: string
     throw new Error('Configura VITE_PUBLIC_SITE_URL con la dirección publicada del evento para compartir invitaciones.')
   }
   const invitation = new URL(`/registro/${encodeURIComponent(token)}`, site.origin).href
-  const greeting = name && name !== 'Invitado pendiente' ? `Hola ${name},` : 'Hola,'
-  const message = `${greeting}\n\nRZ Eventos te invita a Familias empresarias en la era de las turbulencias: retos y oportunidades.\n\nConsulta los detalles y confirma tu asistencia aquí:\n${invitation}\n\nEsta invitación es personal e intransferible.`
+  const greeting = name.trim() && name.trim() !== 'Invitado pendiente' ? `Apreciable ${name.trim()}:` : 'Reciba un cordial saludo.'
+  const message = `${greeting}\n\nRZ Eventos tiene el gusto de invitarle a la conferencia privada:\n\n*Familias empresarias en la era de las turbulencias: retos y oportunidades*\n\nUn encuentro para reflexionar sobre los desafíos y las oportunidades de las familias empresarias, con la participación de *Manuel Bermejo Sánchez* y la moderación de *José Roberto Romo Zepeda*.\n\n*Fecha:* martes 17 de noviembre de 2026.\n*Horario:* 9:00 h. Registro a partir de las 8:30 h.\n*Sede:* Hyatt Regency Andares, Guadalajara, Jalisco.\n\nAgradeceremos confirmar su asistencia antes del 16 de noviembre a través de su enlace personal, donde podrá consultar los detalles del evento:\n${invitation}\n\nEsta invitación es personal e intransferible.\n\nSerá un gusto contar con su presencia.\n\nAtentamente,\n*RZ Eventos*`
   return `https://wa.me/${recipient}?text=${encodeURIComponent(message)}`
 }
