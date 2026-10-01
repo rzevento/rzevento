@@ -14,6 +14,15 @@ const compile = source => ts.transpileModule(source, { compilerOptions: {
 const permissions = { exports: {}, require }
 vm.runInNewContext(compile(readFileSync(new URL('../src/lib/organizer-permissions.ts', import.meta.url), 'utf8')), permissions)
 const { OrganizerRoleContext, useCanManageInvitations } = permissions.exports
+function loadDashboardModule(path, dependencies = {}) {
+  const context = { exports: {}, require: name => name.endsWith('.css') ? {} : dependencies[name] || require(name) }
+  vm.runInNewContext(compile(readFileSync(new URL(path, import.meta.url), 'utf8')), context)
+  return context.exports
+}
+const dashboardModel = loadDashboardModule('../src/lib/dashboard.ts')
+const dailyChart = loadDashboardModule('../src/components/DailyConfirmations.tsx', { '../lib/dashboard': dashboardModel })
+const { default: EventDashboard } = loadDashboardModule('../src/components/EventDashboard.tsx', { '../lib/dashboard': dashboardModel, './DailyConfirmations': dailyChart })
+
 const source = readFileSync(new URL('../src/main.tsx', import.meta.url), 'utf8')
 const ast = ts.createSourceFile('main.tsx', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
 // Render the actual page components; external data and session are controlled fixtures.
@@ -40,7 +49,7 @@ function render(component, { role = 'staff', profilePending = false, profileErro
       const index = stateIndex++
       return React.useState(index < stateValues.length ? stateValues[index] : initial)
     },
-    OrganizerRoleContext, useCanManageInvitations,
+    OrganizerRoleContext, useCanManageInvitations, EventDashboard,
     useQuery({ queryKey }) {
       return queryKey[0] === 'organizer-profile'
         ? { data: profilePending || profileError ? undefined : { displayName: 'Persona de prueba', role: 'Equipo', roleCode: role }, isPending: profilePending, isError: profileError }
@@ -58,14 +67,14 @@ function render(component, { role = 'staff', profilePending = false, profileErro
   vm.runInNewContext(compile(componentSource + `\nexports.Component = ${component};`), sandbox)
   return renderToStaticMarkup(React.createElement(OrganizerRoleContext.Provider, { value: role }, React.createElement(sandbox.exports.Component)))
 }
-const restrictedLabels = ['Nueva invitación', 'Descargar lista de invitados', 'Enviar todas las invitaciones', 'Exportar CSV', 'Cargar masivamente', 'Agregar invitado', 'Enviar correo', 'Reenviar invitación', 'Abrir WhatsApp', 'Marcar WhatsApp enviado']
+const restrictedLabels = ['Nueva invitación', 'Descargar lista de invitados', 'Enviar todas las invitaciones', 'Exportar CSV', 'Exportar filtrados', 'Cargar masivamente', 'Agregar invitado', 'Enviar correo', 'Reenviar invitación', 'Abrir WhatsApp', 'Marcar WhatsApp enviado']
 for (const role of ['staff', 'viewer', null, 'unexpected']) {
   test(`${role}: summary and guest consultation remain available without invitation controls`, () => {
     const shell = render('AdminLayout', { role })
     assert.match(shell, /> Resumen</)
     assert.match(shell, /> Invitados /)
     const summary = render('SummaryPage', { role })
-    assert.match(summary, /Invitados totales/)
+    assert.match(summary, /Detalle de invitados/)
     const guests = render('GuestsPage', { role })
     assert.match(guests, /Persona de prueba/)
     assert.match(guests, /Buscar por nombre/)
@@ -79,7 +88,7 @@ for (const role of ['staff', 'viewer', null, 'unexpected']) {
   })
 }
 test('administrator retains header, bulk, export, import, creation and individual email actions', () => {
-  const html = render('AdminLayout', { role: 'admin' }) + render('GuestsPage', { role: 'admin' }) + render('GuestsPage', { role: 'admin', sent: true })
+  const html = render('AdminLayout', { role: 'admin' }) + render('SummaryPage', { role: 'admin' }) + render('GuestsPage', { role: 'admin' }) + render('GuestsPage', { role: 'admin', sent: true })
   for (const label of restrictedLabels.filter(label => label !== 'Abrir WhatsApp')) assert.ok(html.includes(label), `admin missing ${label}`)
 })
 test('pending and failed profile checks never render privileged controls or the panel', () => {

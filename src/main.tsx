@@ -9,10 +9,9 @@ import { QrScanner } from './components/QrScanner'
 import { addEventMember, beginRsvp, cancelRsvp, checkInGuest, undoCheckInGuest, createGuest, updateGuest, deleteGuest, markGuestCancelled, findGuestByQr, getCurrentOrganizerProfile, getEventMembers, getInvitationToken, getInvitationDetails, markWhatsAppInvitationSent, sendInvitation, submitRsvp, supabase } from './lib/supabase'
 import { canSendPendingEmail, whatsappInvitationUrl, whatsappPhone } from './lib/invitations'
 import { OrganizerRoleContext, useCanManageInvitations } from './lib/organizer-permissions'
+import EventDashboard from './components/EventDashboard'
+import type { Guest, GuestStatus } from './lib/dashboard'
 import './styles.css'
-
-type GuestStatus = 'Confirmado' | 'Pendiente' | 'Canceló'
-type Guest = { id: string; name: string; company: string; email: string; phone: string; origin: string; invite: string; whatsappSentAt?: string | null; invitationToken?: string | null; status: GuestStatus; checkedIn: boolean }
 
 const event = {
   eyebrow: 'Conferencia privada',
@@ -80,16 +79,22 @@ const guestQuery = async (): Promise<Guest[]> => {
   const { data: activeEvent, error: eventError } = await supabase.from('events').select('id').order('created_at', { ascending: false }).limit(1).maybeSingle()
   if (eventError) throw eventError
   if (!activeEvent) return []
-  const { data, error } = await supabase.from('guests').select('id, full_name, company, email, phone, origin, invitations(*), rsvps(status), check_ins(id)').eq('event_id', activeEvent.id).order('created_at', { ascending: false })
-  if (error) throw error
-  if (!data) return []
-  return data.map((guest) => {
-    const invitation = Array.isArray(guest.invitations) ? guest.invitations[0] : guest.invitations
-    const rsvp = Array.isArray(guest.rsvps) ? guest.rsvps[0] : guest.rsvps
-    const checkIn = Array.isArray(guest.check_ins) ? guest.check_ins[0] : guest.check_ins
-    const status: GuestStatus = rsvp?.status === 'confirmed' ? 'Confirmado' : rsvp?.status === 'cancelled' || rsvp?.status === 'declined' ? 'Canceló' : 'Pendiente'
-    return { id: String(guest.id), name: guest.full_name || 'Invitado pendiente', company: guest.company || 'Sin empresa', email: guest.email || '', phone: guest.phone || '', origin: guest.origin || 'Sin origen', invite: invitation?.sent_at || invitation?.status === 'sent' ? 'Enviada' : 'Pendiente', whatsappSentAt: invitation?.whatsapp_sent_at || null, invitationToken: invitation?.token || null, status, checkedIn: Boolean(checkIn) }
-  })
+  const guests: Guest[] = []
+  const pageSize = 500
+  for (let offset = 0; ; offset += pageSize) {
+    const { data, error } = await supabase.from('guests').select('id, full_name, company, email, phone, origin, invitations(*), rsvps(status, submitted_at), check_ins(id)').eq('event_id', activeEvent.id).order('created_at', { ascending: false }).order('id').range(offset, offset + pageSize - 1)
+    if (error) throw error
+    if (!data) throw new Error('No se pudo consultar la lista de invitados')
+    guests.push(...data.map((guest) => {
+      const invitation = Array.isArray(guest.invitations) ? guest.invitations[0] : guest.invitations
+      const rsvp = Array.isArray(guest.rsvps) ? guest.rsvps[0] : guest.rsvps
+      const checkIn = Array.isArray(guest.check_ins) ? guest.check_ins[0] : guest.check_ins
+      const status: GuestStatus = rsvp?.status === 'confirmed' ? 'Confirmado' : rsvp?.status === 'cancelled' || rsvp?.status === 'declined' ? 'Canceló' : 'Pendiente'
+      return { id: String(guest.id), name: guest.full_name || 'Invitado pendiente', company: guest.company || 'Sin empresa', email: guest.email || '', phone: guest.phone || '', origin: guest.origin || 'Sin origen', invite: invitation?.sent_at || invitation?.status === 'sent' ? 'Enviada' : 'Pendiente', whatsappSentAt: invitation?.whatsapp_sent_at || null, invitationToken: invitation?.token || null, status, checkedIn: Boolean(checkIn), confirmedAt: rsvp?.submitted_at || null }
+    }))
+    if (data.length < pageSize) break
+  }
+  return guests
 }
 
 async function saveAttendance(id: string, present: boolean) {
@@ -324,19 +329,12 @@ function AdminLogin({ onLocalAuthenticated }: { onLocalAuthenticated: () => void
 }
 
 function SummaryPage() {
-  const { data = demoGuests } = useQuery({ queryKey: ['guests'], queryFn: guestQuery })
-  const total = data.length
-  const confirmed = data.filter(g => g.status === 'Confirmado').length
-  const pending = data.filter(g => g.status === 'Pendiente').length
-  const cancelled = data.filter(g => g.status === 'Canceló').length
-  const checked = data.filter(g => g.checkedIn).length
-  const percent = (value: number) => total ? `${Math.round((value / total) * 100)}%` : '0%'
-  return <section className="dashboard"><div className="welcome-row"><div><p className="eyebrow orange">Panel de control</p><h2>Buenos días, María</h2><p className="muted">Aquí tienes el pulso de tus invitaciones.</p></div><Link to="/admin/invitados" className="text-link">Ver lista completa <ArrowRight size={16} /></Link></div><div className="stats-grid"><Stat icon={<Users />} value={String(total)} label="Invitados totales" detail="Lista actual" /><Stat icon={<CheckCircle2 />} value={String(confirmed)} label="Confirmados" detail={`${percent(confirmed)} de la lista`} accent /><Stat icon={<Clock3 />} value={String(pending)} label="Sin respuesta" detail={`${percent(pending)} de la lista`} /><Stat icon={<Check />} value={String(checked)} label="Ya llegaron" detail="Día del evento" /></div><div className="dashboard-columns"><div className="panel"><div className="panel-heading"><div><h3>Estado de invitaciones</h3><p className="muted">Distribución de la lista actual</p></div><button className="icon-button"><MoreHorizontal size={18} /></button></div><div className="bar-chart" aria-label="Gráfica del estado de invitaciones"><div className="bar-row"><span>Confirmados <b>{confirmed} · {percent(confirmed)}</b></span><div><i style={{ width: percent(confirmed) }}></i></div></div><div className="bar-row"><span>Pendientes <b>{pending} · {percent(pending)}</b></span><div><i className="gray-bar" style={{ width: percent(pending) }}></i></div></div><div className="bar-row"><span>Cancelaron <b>{cancelled} · {percent(cancelled)}</b></span><div><i className="soft-bar" style={{ width: percent(cancelled) }}></i></div></div></div></div><div className="panel next-event"><div className="panel-heading"><div><h3>Detalles del evento</h3><p className="muted">Tu próximo encuentro</p></div><CalendarDays className="orange-icon" size={20} /></div><div className="next-event-title">{event.title} <span>{event.accent}</span></div><div className="mini-detail"><CalendarDays size={16} /> {event.date}</div><div className="mini-detail"><MapPin size={16} /> {event.venue}, {event.city}</div><Link to="/admin/configuracion" className="outline-link">Editar evento <ArrowRight size={15} /></Link></div></div><div className="panel recent-panel"><div className="panel-heading"><div><h3>Actividad reciente</h3><p className="muted">Últimas respuestas registradas</p></div><Link to="/admin/invitados" className="text-link">Ver todo <ArrowRight size={15} /></Link></div><GuestRows guests={data.slice(0, 3)} /></div></section>
+  const canExport = useCanManageInvitations()
+  const { data = [], isPending, isError, isFetching, dataUpdatedAt, refetch } = useQuery({ queryKey: ['guests'], queryFn: guestQuery, refetchInterval: 60_000 })
+  // A recorded send in either channel counts as an invitation sent.
+  const dashboardGuests = data.map(guest => guest.whatsappSentAt ? { ...guest, invite: 'Enviada' } : guest)
+  return <EventDashboard guests={dashboardGuests} canExport={canExport} loading={isPending} error={isError} refreshing={isFetching} updatedAt={dataUpdatedAt} demo={!supabase} onRefresh={() => void refetch()} />
 }
-
-function Stat({ icon, value, label, detail, accent = false }: { icon: React.ReactNode; value: string; label: string; detail: string; accent?: boolean }) { return <div className={`stat-card ${accent ? 'stat-accent' : ''}`}><div className="stat-icon">{icon}</div><strong>{value}</strong><span>{label}</span><small>{detail}</small></div> }
-
-function GuestRows({ guests }: { guests: Guest[] }) { return <div className="guest-rows">{guests.map(g => <div className="guest-row" key={g.id}><div className="table-avatar">{g.name.split(' ').map(n => n[0]).slice(0, 2).join('')}</div><div className="guest-name"><strong>{g.name}</strong><small>{g.company}</small></div><span className={`status status-${g.status === 'Confirmado' ? 'confirmed' : g.status === 'Canceló' ? 'cancelled' : 'pending'}`}><i></i>{g.status}</span><small className="row-origin">{g.origin}</small><MoreHorizontal size={17} className="row-more" /></div>)}</div> }
 
 function InvitationState({ guest, channel = 'email', disabled = false, menuActions }: { guest: Guest; channel?: 'email' | 'whatsapp'; disabled?: boolean; menuActions?: React.ReactNode }) {
   const canManageInvitations = useCanManageInvitations()

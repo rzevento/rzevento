@@ -1,0 +1,25 @@
+.rz-daily { margin-bottom: 20px; }
+.rz-daily h3 { display: flex; align-items: center; gap: 8px; }
+.rz-daily h3 svg { color: #63816c; }
+.rz-daily-period { display: flex; align-items: center; gap: 8px; font-size: 10px; color: #707b75; font-weight: 400; }
+.rz-daily-summary { display: flex; align-items: baseline; flex-wrap: wrap; gap: 22px; margin: 6px 0 25px; color: #67776a; font-size: 12px; }
+.rz-daily-summary strong { color: #284c3e; font: 800 25px/1.2 'Manrope', sans-serif; margin-right: 4px; }
+.rz-daily-summary > small { margin-left: auto; font-size: 10px; }
+.rz-daily-scroll { overflow-x: auto; padding-top: 10px; }
+.rz-daily-scroll:focus-visible { outline: 2px solid #63816c; outline-offset: 3px; }
+.rz-daily-plot { position: relative; padding-left: 24px; }
+.rz-daily-grid { position: absolute; inset: 20px 0 42px; display: flex; flex-direction: column; justify-content: space-between; pointer-events: none; }
+.rz-daily-grid span { border-top: 1px dashed #e3e8df; font-size: 9px; color: #899387; height: 0; line-height: 0; }
+.rz-daily-grid span:last-child { border-top-style: solid; }
+.rz-daily-bars { display: flex; height: 222px; gap: 5px; }
+.rz-daily-day { display: flex; flex-direction: column; flex: 1; min-width: 44px; padding: 0 5px; color: #68756b; background: transparent; border-radius: 5px; }
+.rz-daily-day:hover, .rz-daily-day[aria-pressed=true] { background: #eef3e9; }
+.rz-daily-column { display: flex; align-items: flex-end; justify-content: center; height: 180px; width: 100%; padding-top: 20px; }
+.rz-daily-bar { position: relative; display: block; width: min(100%, 38px); min-height: 2px; background: #8aa894; border-radius: 4px 4px 0 0; transition: height .2s; }
+.rz-daily-bar strong { position: absolute; bottom: 100%; left: 0; right: 0; padding-bottom: 6px; text-align: center; color: #446550; font-size: 11px; }
+.rz-daily-day.today .rz-daily-bar, .rz-daily-day[aria-pressed=true] .rz-daily-bar { background: #284c3e; }
+.rz-daily-label { width: 100%; padding-top: 9px; font-size: 9px; white-space: nowrap; }
+.rz-daily-label small { display: block; font-size: 9px; color: #397261; font-weight: 700; margin-top: 2px; }
+.rz-daily-empty { color: #707b75; font-size: 12px; margin: 12px 0 0; }
+@media (max-width: 600px) { .rz-daily > .rz-card-title { flex-direction: column; }.rz-daily-summary { gap: 12px; }.rz-daily-summary > small { margin-left: 0; width: 100%; } }
+@media (prefers-reduced-motion: reduce) { .rz-daily-bar { transition: none; } }
