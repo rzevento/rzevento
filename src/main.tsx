@@ -5,7 +5,7 @@ import { createRootRoute, createRoute, createRouter, Link, Outlet, RouterProvide
 import { AlertCircle, ArrowRight, CalendarDays, Camera, Check, CheckCircle2, ChevronDown, Clock3, Download, Eye, EyeOff, Filter, LayoutDashboard, LockKeyhole, MapPin, Menu, MoreHorizontal, Pencil, Trash2, QrCode, Search, Send, Settings2, ShieldCheck, Upload, Users, X } from 'lucide-react'
 import { jsPDF } from 'jspdf'
 import QRCode from 'qrcode'
-import { Html5Qrcode } from 'html5-qrcode'
+import { QrScanner } from './components/QrScanner'
 import { addEventMember, beginRsvp, cancelRsvp, checkInGuest, undoCheckInGuest, createGuest, updateGuest, deleteGuest, markGuestCancelled, findGuestByQr, getCurrentOrganizerProfile, getEventMembers, getInvitationToken, getInvitationDetails, markWhatsAppInvitationSent, sendInvitation, submitRsvp, supabase } from './lib/supabase'
 import { canSendPendingEmail, whatsappInvitationUrl, whatsappPhone } from './lib/invitations'
 import { OrganizerRoleContext, useCanManageInvitations } from './lib/organizer-permissions'
@@ -696,6 +696,9 @@ function CheckInPage() {
   const [scannerOpen, setScannerOpen] = useState(false)
   const [scannerError, setScannerError] = useState('')
   const [scanCode, setScanCode] = useState('')
+  const [scanPending, setScanPending] = useState(false)
+  const [scanNotice, setScanNotice] = useState('')
+  const scanInFlightRef = useRef(false)
   const { data = demoGuests } = useQuery({ queryKey: ['guests'], queryFn: guestQuery })
   const matches = search.length > 1 ? data.filter(g => `${g.name} ${g.email} ${g.phone} ${g.company}`.toLowerCase().includes(search.toLowerCase())) : []
   const checked = data.filter(guest => guest.checkedIn).map(guest => guest.id)
@@ -713,77 +716,40 @@ function CheckInPage() {
     }
   }
   async function resolveQr(value: string) {
+    if (!value.trim() || scanInFlightRef.current) return
+    scanInFlightRef.current = true
+    setScannerOpen(false)
+    setScanPending(true)
     setScannerError('')
+    setAttendanceError('')
+    setScanNotice('')
     try {
       const result = await findGuestByQr(value)
-      if (result.error || !result.data) { setScannerError('No encontramos una invitación con ese QR.'); return }
+      if (result.error || !result.data) {
+        setScannerError(!result.error || result.error.message === 'Invitación no encontrada'
+          ? 'No encontramos una invitación con ese QR. Puedes volver a escanear o buscar por nombre.'
+          : 'No pudimos validar la invitación. Revisa tu conexión y vuelve a escanear.')
+        return
+      }
       setSearch(result.data.name || '')
-      if (!checked.includes(result.data.id)) {
+      if (checked.includes(result.data.id)) {
+        setScanNotice(`${result.data.name}: su llegada ya estaba registrada.`)
+      } else {
         const checkError = await check(result.data.id)
         if (checkError) {
-          setScannerError('La invitación fue encontrada, pero no pudimos registrar la entrada. Inténtalo de nuevo.')
+          setScannerError('La invitación fue encontrada, pero no pudimos registrar la entrada. Vuelve a escanear o registra la llegada por nombre.')
           return
         }
+        setScanNotice(`Llegada registrada: ${result.data.name}.`)
       }
-      setScannerOpen(false)
     } catch {
-      setScannerError('No pudimos procesar este QR. Verifica tu conexión e inténtalo de nuevo.')
+      setScannerError('No pudimos procesar este QR. Verifica tu conexión y vuelve a escanear.')
+    } finally {
+      scanInFlightRef.current = false
+      setScanPending(false)
     }
   }
-  return <section className="checkin-page"><div className="checkin-intro"><p className="eyebrow orange">Registro en evento</p><h2>Bienvenidos</h2><p className="muted">Busca a la persona invitada o escanea su código QR para registrar su llegada.</p></div><div className="checkin-tools"><div className="checkin-search"><Search size={24} /><input autoFocus value={search} onChange={e => setSearch(e.target.value)} placeholder="Escribe un nombre, correo o empresa..." /></div><button className="button button-orange scan-button" onClick={() => { setScannerError(''); setScannerOpen(true) }}><QrCode size={19} /> Escanear QR</button></div>{attendanceError && <p className="form-error" role="alert">{attendanceError}</p>}{matches.length > 0 && <div className="checkin-results">{matches.map(g => <div className="checkin-result" key={g.id}><div className="table-avatar">{g.name.split(' ').map(n => n[0]).slice(0, 2).join('')}</div><div className="guest-name"><strong>{g.name}</strong><small>{g.company} · {g.origin}</small></div>{g.checkedIn ? <div className="attendance-actions"><span className="present"><CheckCircle2 size={17} /> Presente</span><button className="row-action" disabled={checking !== null} onClick={() => void check(g.id, false)}>{checking === g.id ? 'Guardando…' : 'Marcar como no ha llegado'}</button></div> : <button className="button button-orange small" disabled={checking !== null} onClick={() => void check(g.id)}>{checking === g.id ? 'Guardando…' : 'Registrar entrada'}</button>}</div>)}</div>}<div className="checkin-event-card"><div className="event-date-block"><strong>17</strong><span>NOV<br />2026</span></div><div><p className="eyebrow">Evento de hoy</p><h3>{event.title} <span>{event.accent}</span></h3><p className="muted"><MapPin size={15} /> {event.venue} · {event.city}</p></div><div className="checkin-count"><strong>{checked.length}</strong><span>registrados</span></div></div>{scannerOpen && <QrScanner onClose={() => setScannerOpen(false)} onCode={resolveQr} error={scannerError} code={scanCode} setCode={setScanCode} />}</section>
-}
-
-function QrScanner({ onClose, onCode, error, code, setCode }: { onClose: () => void; onCode: (code: string) => void; error: string; code: string; setCode: (code: string) => void }) {
-  const scannerRef = useRef<Html5Qrcode | null>(null)
-  const scanHandledRef = useRef(false)
-  const [cameraError, setCameraError] = useState('')
-  useEffect(() => {
-    let active = true
-    const scannerConfig = { fps: 15, qrbox: (viewfinderWidth: number, viewfinderHeight: number) => { const size = Math.floor(Math.min(viewfinderWidth, viewfinderHeight) * 0.72); return { width: size, height: size } }, aspectRatio: 1 }
-    async function startScanner(scanner: Html5Qrcode, camera: { facingMode: string } | string) {
-      await scanner.start(camera, scannerConfig, decodedText => {
-        if (!active || scanHandledRef.current) return
-        scanHandledRef.current = true
-        active = false
-        void scanner.stop().catch(() => undefined).finally(() => {
-          try { scanner.clear() } catch { /* el lector ya pudo haberse limpiado */ }
-          void Promise.resolve().then(() => onCode(decodedText)).catch(() => undefined)
-        })
-      }, () => undefined)
-    }
-    async function start() {
-      let scanner: Html5Qrcode | null = null
-      try {
-        scanner = new Html5Qrcode('qr-reader')
-        scannerRef.current = scanner
-        await startScanner(scanner, { facingMode: 'environment' })
-      } catch {
-        if (scanner) {
-          try { scanner.clear() } catch { /* el lector ya pudo haberse detenido */ }
-        }
-        if (!active) return
-        try {
-          const cameras = await Html5Qrcode.getCameras()
-          if (!cameras.length) throw new Error('No camera found')
-          scanner = new Html5Qrcode('qr-reader')
-          scannerRef.current = scanner
-          await startScanner(scanner, cameras[cameras.length - 1].id)
-        } catch {
-          setCameraError(window.isSecureContext ? 'No pudimos abrir la cámara. Activa el permiso de cámara para este sitio o usa el código manual.' : 'El escáner necesita abrirse desde una conexión segura (HTTPS). Usa el código manual o entra desde el enlace seguro.')
-        }
-      }
-    }
-    void start()
-    return () => {
-      active = false
-      const scanner = scannerRef.current
-      scannerRef.current = null
-      if (scanner) void scanner.stop().catch(() => undefined).finally(() => {
-        try { scanner.clear() } catch { /* el lector ya pudo haberse limpiado */ }
-      })
-    }
-  }, [])
-  return <div className="modal-backdrop scanner-backdrop"><div className="scanner-card"><button className="modal-close" onClick={onClose} aria-label="Cerrar escáner"><X size={19} /></button><div className="scanner-heading"><QrCode size={22} /><div><p className="eyebrow orange">Registro rápido</p><h3>Escanea el QR de la invitación</h3></div></div><div id="qr-reader" className="scanner-viewport">{cameraError && <div className="scanner-message"><AlertCircle size={25} /><p>{cameraError}</p></div>}</div><p className="scanner-help">Apunta la cámara al código QR del invitado.</p><div className="manual-code"><input value={code} onChange={e => setCode(e.target.value)} placeholder="Pega aquí el enlace o token" onKeyDown={e => { if (e.key === 'Enter') void onCode(code) }} /><button className="button button-dark small" disabled={!code.trim()} onClick={() => void onCode(code)}>Buscar</button></div>{error && <p className="form-error scanner-error">{error}</p>}</div></div>
+  return <section className="checkin-page"><div className="checkin-intro"><p className="eyebrow orange">Registro en evento</p><h2>Bienvenidos</h2><p className="muted">Busca a la persona invitada o escanea su código QR para registrar su llegada.</p></div><div className="checkin-tools"><div className="checkin-search"><Search size={24} /><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Escribe un nombre, correo o empresa..." /></div><button className="button button-orange scan-button" disabled={scanPending || checking !== null} onClick={() => { setScannerError(''); setScanNotice(''); setScanCode(''); setScannerOpen(true) }}><QrCode size={19} /> {scannerError ? 'Volver a escanear QR' : 'Escanear QR'}</button></div>{scanPending && <p className="checkin-feedback" role="status">Validando invitación…</p>}{scanNotice && <p className="checkin-feedback checkin-success" role="status">{scanNotice}</p>}{scannerError && <p className="form-error checkin-feedback" role="alert">{scannerError}</p>}{attendanceError && !scannerError && <p className="form-error" role="alert">{attendanceError}</p>}{matches.length > 0 && <div className="checkin-results">{matches.map(g => <div className="checkin-result" key={g.id}><div className="table-avatar">{g.name.split(' ').map(n => n[0]).slice(0, 2).join('')}</div><div className="guest-name"><strong>{g.name}</strong><small>{g.company} · {g.origin}</small></div>{g.checkedIn ? <div className="attendance-actions"><span className="present"><CheckCircle2 size={17} /> Presente</span><button className="row-action" disabled={scanPending || checking !== null} onClick={() => void check(g.id, false)}>{checking === g.id ? 'Guardando…' : 'Marcar como no ha llegado'}</button></div> : <button className="button button-orange small" disabled={scanPending || checking !== null} onClick={() => void check(g.id)}>{checking === g.id ? 'Guardando…' : 'Registrar entrada'}</button>}</div>)}</div>}<div className="checkin-event-card"><div className="event-date-block"><strong>17</strong><span>NOV<br />2026</span></div><div><p className="eyebrow">Evento de hoy</p><h3>{event.title} <span>{event.accent}</span></h3><p className="muted"><MapPin size={15} /> {event.venue} · {event.city}</p></div><div className="checkin-count"><strong>{checked.length}</strong><span>registrados</span></div></div>{scannerOpen && <QrScanner onClose={() => setScannerOpen(false)} onCode={resolveQr} code={scanCode} setCode={setScanCode} />}</section>
 }
 
 function ConfigurationPage() {
