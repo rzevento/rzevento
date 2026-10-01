@@ -8,6 +8,7 @@ import QRCode from 'qrcode'
 import { Html5Qrcode } from 'html5-qrcode'
 import { addEventMember, beginRsvp, cancelRsvp, checkInGuest, undoCheckInGuest, createGuest, updateGuest, deleteGuest, markGuestCancelled, findGuestByQr, getCurrentOrganizerProfile, getEventMembers, getInvitationToken, getInvitationDetails, markWhatsAppInvitationSent, sendInvitation, submitRsvp, supabase } from './lib/supabase'
 import { canSendPendingEmail, whatsappInvitationUrl, whatsappPhone } from './lib/invitations'
+import { OrganizerRoleContext, useCanManageInvitations } from './lib/organizer-permissions'
 import './styles.css'
 
 type GuestStatus = 'Confirmado' | 'Pendiente' | 'Canceló'
@@ -245,24 +246,49 @@ function AdminLayout() {
   const [sessionReady, setSessionReady] = useState(false)
   const [authenticated, setAuthenticated] = useState(false)
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
-  const [organizer, setOrganizer] = useState({ displayName: 'Administrador', role: 'Administrador' })
+  const [userId, setUserId] = useState<string | null>(null)
   const [localAuthenticated, setLocalAuthenticated] = useState(() => localStorage.getItem('rz-organizer-authenticated') === 'true')
   useEffect(() => {
     if (!supabase) {
       setAuthenticated(localAuthenticated)
-      setOrganizer({ displayName: 'María Ríos', role: 'Administradora' })
       setSessionReady(true)
       return
     }
-    supabase.auth.getSession().then(({ data }) => { setAuthenticated(Boolean(data.session)); setSessionReady(true); if (data.session) void getCurrentOrganizerProfile().then(result => { if (result.data) setOrganizer(result.data) }) })
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => setAuthenticated(Boolean(session)))
-    return () => listener.subscription.unsubscribe()
+    let active = true
+    let receivedAuthEvent = false
+    supabase.auth.getSession().then(({ data }) => {
+      if (!active || receivedAuthEvent) return
+      setUserId(data.session?.user.id || null)
+      setAuthenticated(Boolean(data.session))
+      setSessionReady(true)
+    })
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+      receivedAuthEvent = true
+      setUserId(session?.user.id || null)
+      setAuthenticated(Boolean(session))
+      setSessionReady(true)
+    })
+    return () => { active = false; listener.subscription.unsubscribe() }
   }, [localAuthenticated])
+  const organizerQuery = useQuery({
+    queryKey: ['organizer-profile', userId, authenticated],
+    enabled: sessionReady && authenticated,
+    queryFn: async () => {
+      const result = await getCurrentOrganizerProfile()
+      if (result.error || !result.data) throw result.error || new Error('No autorizado')
+      return result.data
+    },
+    gcTime: 0,
+  })
+  const organizer = organizerQuery.data
+  const canManageInvitations = organizer?.roleCode === 'admin'
   if (!sessionReady) return <div className="auth-loading">Cargando acceso…</div>
   if (!authenticated) return <AdminLogin onLocalAuthenticated={() => { localStorage.setItem('rz-organizer-authenticated', 'true'); setLocalAuthenticated(true); setAuthenticated(true) }} />
+  if (organizerQuery.isPending) return <div className="auth-loading">Cargando permisos…</div>
+  if (organizerQuery.isError || !organizer) return <div className="auth-loading"><p role="alert">No pudimos verificar tu acceso al evento.</p><button className="button button-dark" onClick={() => void organizerQuery.refetch()}>Reintentar</button><button className="outline-button" onClick={() => { if (supabase) void supabase.auth.signOut() }}>Cerrar sesión</button></div>
   const organizerInitials = organizer.displayName.split(' ').map(name => name[0]).slice(0, 2).join('').toUpperCase()
   const sentInvitations = guests.filter(guest => guest.invite === 'Enviada' || Boolean(guest.whatsappSentAt)).length
-  return <div className={`admin-shell ${mobileNavOpen ? 'mobile-open' : ''}`}><aside className="sidebar"><div className="sidebar-brand"><Logo /><span>RZ EVENTOS</span></div><div className="event-switcher"><span>EVENTO ACTIVO</span><strong>Familias empresarias</strong><ChevronDown size={15} /></div><nav onClick={() => setMobileNavOpen(false)}><Link to="/admin" activeOptions={{ exact: true }} activeProps={{ className: 'active' }}><LayoutDashboard size={18} /> Resumen</Link><Link to="/admin/invitados" activeProps={{ className: 'active' }}><Users size={18} /> Invitados <b>{sentInvitations}</b></Link><Link to="/admin/check-in" activeProps={{ className: 'active' }}><CheckCircle2 size={18} /> Registro en evento</Link><Link to="/admin/configuracion" activeProps={{ className: 'active' }}><Settings2 size={18} /> Configuración</Link></nav><div className="sidebar-bottom"><div className="user-avatar">{organizerInitials}</div><div><strong>{organizer.displayName}</strong><small>{organizer.role}</small></div><button className="sidebar-logout" onClick={() => { localStorage.removeItem('rz-organizer-authenticated'); sessionStorage.removeItem('rz-organizer-authenticated'); if (supabase) void supabase.auth.signOut(); else { setLocalAuthenticated(false); setAuthenticated(false) } }} aria-label="Cerrar sesión"><MoreHorizontal size={18} /></button></div></aside><main className="admin-main"><header className="admin-header"><button className="mobile-menu" onClick={() => setMobileNavOpen(current => !current)} aria-label="Abrir menú"><Menu size={20} /></button><div><p className="eyebrow">Martes 17 de noviembre de 2026</p><h1>Familias empresarias</h1></div><div className="header-actions"><button className="icon-button" onClick={() => downloadGuestCsv(guests)} aria-label="Descargar lista de invitados"><Download size={17} /></button><button className="button button-orange small" onClick={() => void navigate({ to: '/admin/invitados' })}><Send size={16} /> Nueva invitación</button></div></header><Outlet /></main></div>
+  return <OrganizerRoleContext.Provider value={organizer.roleCode}><div className={`admin-shell ${mobileNavOpen ? 'mobile-open' : ''}`}><aside className="sidebar"><div className="sidebar-brand"><Logo /><span>RZ EVENTOS</span></div><div className="event-switcher"><span>EVENTO ACTIVO</span><strong>Familias empresarias</strong><ChevronDown size={15} /></div><nav onClick={() => setMobileNavOpen(false)}><Link to="/admin" activeOptions={{ exact: true }} activeProps={{ className: 'active' }}><LayoutDashboard size={18} /> Resumen</Link><Link to="/admin/invitados" activeProps={{ className: 'active' }}><Users size={18} /> Invitados <b>{sentInvitations}</b></Link><Link to="/admin/check-in" activeProps={{ className: 'active' }}><CheckCircle2 size={18} /> Registro en evento</Link><Link to="/admin/configuracion" activeProps={{ className: 'active' }}><Settings2 size={18} /> Configuración</Link></nav><div className="sidebar-bottom"><div className="user-avatar">{organizerInitials}</div><div><strong>{organizer.displayName}</strong><small>{organizer.role}</small></div><button className="sidebar-logout" onClick={() => { localStorage.removeItem('rz-organizer-authenticated'); sessionStorage.removeItem('rz-organizer-authenticated'); if (supabase) void supabase.auth.signOut(); else { setLocalAuthenticated(false); setAuthenticated(false) } }} aria-label="Cerrar sesión"><MoreHorizontal size={18} /></button></div></aside><main className="admin-main"><header className="admin-header"><button className="mobile-menu" onClick={() => setMobileNavOpen(current => !current)} aria-label="Abrir menú"><Menu size={20} /></button><div><p className="eyebrow">Martes 17 de noviembre de 2026</p><h1>Familias empresarias</h1></div>{canManageInvitations && <div className="header-actions"><button className="icon-button" onClick={() => downloadGuestCsv(guests)} aria-label="Descargar lista de invitados"><Download size={17} /></button><button className="button button-orange small" onClick={() => void navigate({ to: '/admin/invitados' })}><Send size={16} /> Nueva invitación</button></div>}</header><Outlet /></main></div></OrganizerRoleContext.Provider>
 }
 
 function AdminLogin({ onLocalAuthenticated }: { onLocalAuthenticated: () => void }) {
@@ -313,6 +339,7 @@ function Stat({ icon, value, label, detail, accent = false }: { icon: React.Reac
 function GuestRows({ guests }: { guests: Guest[] }) { return <div className="guest-rows">{guests.map(g => <div className="guest-row" key={g.id}><div className="table-avatar">{g.name.split(' ').map(n => n[0]).slice(0, 2).join('')}</div><div className="guest-name"><strong>{g.name}</strong><small>{g.company}</small></div><span className={`status status-${g.status === 'Confirmado' ? 'confirmed' : g.status === 'Canceló' ? 'cancelled' : 'pending'}`}><i></i>{g.status}</span><small className="row-origin">{g.origin}</small><MoreHorizontal size={17} className="row-more" /></div>)}</div> }
 
 function InvitationState({ guest, channel = 'email', disabled = false, menuActions }: { guest: Guest; channel?: 'email' | 'whatsapp'; disabled?: boolean; menuActions?: React.ReactNode }) {
+  const canManageInvitations = useCanManageInvitations()
   const menuId = useId()
   const menuRef = useRef<HTMLDivElement>(null)
   const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0 })
@@ -332,7 +359,7 @@ function InvitationState({ guest, channel = 'email', disabled = false, menuActio
   const emailMutation = useMutation({ mutationKey: ['invitation-send'], mutationFn: sendEmail })
   const whatsappMutation = useMutation({ mutationKey: ['invitation-send'], mutationFn: markWhatsApp })
   async function sendEmail() {
-    if (saving || disabled) return
+    if (!canManageInvitations || saving || disabled) return
     setSaving('email')
     setError('')
     setEmailNotice('')
@@ -348,7 +375,7 @@ function InvitationState({ guest, channel = 'email', disabled = false, menuActio
     }
   }
   async function markWhatsApp() {
-    if (saving || disabled) return
+    if (!canManageInvitations || saving || disabled) return
     setSaving('whatsapp')
     setError('')
     try {
@@ -361,6 +388,7 @@ function InvitationState({ guest, channel = 'email', disabled = false, menuActio
       setSaving(null)
     }
   }
+  if (!canManageInvitations && channel === 'email') return <span className={guest.invite === 'Enviada' ? 'sent-label' : 'muted'}>{!guest.email ? 'Sin correo' : guest.invite === 'Enviada' ? 'Enviado' : 'Pendiente de envío'}</span>
   if (channel === 'email') return <div className="invitation-email">
     {!guest.email ? <span className="muted">Sin correo</span> : guest.invite === 'Enviada' ? <><span className="sent-label"><Send size={13} /> Enviado</span><button className="send-inline" disabled={disabled || Boolean(saving)} onClick={() => emailMutation.mutate()}>{saving === 'email' ? 'Reenviando…' : 'Reenviar invitación'}</button></> : <button className="send-inline" disabled={disabled || Boolean(saving)} onClick={() => emailMutation.mutate()}>{saving === 'email' ? 'Enviando…' : 'Enviar correo'}</button>}
     {emailNotice && <small role="status">{emailNotice}</small>}
@@ -378,7 +406,7 @@ function InvitationState({ guest, channel = 'email', disabled = false, menuActio
       <div className="invitation-channel">
         <strong>WhatsApp</strong>
         {guest.whatsappSentAt ? <><span className="sent-label"><Check size={13} /> Enviado manualmente</span><time dateTime={guest.whatsappSentAt}>{new Date(guest.whatsappSentAt).toLocaleString('es-MX', { dateStyle: 'short', timeStyle: 'short' })}</time></> : <span className="muted">{guest.phone ? 'Pendiente de envío' : 'Sin celular registrado'}</span>}
-        {guest.phone && <>
+        {canManageInvitations && guest.phone && <>
           {whatsappUrl && <a className="row-action whatsapp-action" href={whatsappUrl} target="_blank" rel="noopener noreferrer">Abrir WhatsApp <ArrowRight size={12} /></a>}
           {isDemo && <small>Modo demo: no se abre un mensaje real.</small>}
           {whatsappHint && <small>{whatsappHint}</small>}
@@ -391,6 +419,7 @@ function InvitationState({ guest, channel = 'email', disabled = false, menuActio
 }
 
 function GuestFormModal({ guest, onClose }: { guest?: Guest; onClose: () => void }) {
+  const canManageInvitations = useCanManageInvitations()
   const [form, setForm] = useState({
     name: guest?.name === 'Invitado pendiente' ? '' : guest?.name || '',
     email: guest?.email || '', phone: guest?.phone || '',
@@ -403,6 +432,7 @@ function GuestFormModal({ guest, onClose }: { guest?: Guest; onClose: () => void
   const close = () => { if (!saveLock.current) onClose() }
   async function save(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
+    if (!guest && !canManageInvitations) return
     if (saveLock.current) return
     setError('')
     if (!form.email.trim() && !form.phone.trim()) { setError('Captura un correo o un celular.'); return }
@@ -454,6 +484,7 @@ function GuestPassModal({ guest, token, onClose }: { guest: Guest; token: string
 }
 
 function GuestsPage() {
+  const canManageInvitations = useCanManageInvitations()
   const { data = demoGuests, isPending, isError } = useQuery({ queryKey: ['guests'], queryFn: guestQuery })
   const [search, setSearch] = useState('')
   const [showNew, setShowNew] = useState(false)
@@ -475,7 +506,7 @@ function GuestsPage() {
   const individualSends = useIsMutating({ mutationKey: ['invitation-send'] })
   const pendingEmails = data.filter(canSendPendingEmail)
   async function sendAllInvitations() {
-    if (bulkLock.current || individualSends || deleteLock.current || editingGuest || !pendingEmails.length) return
+    if (!canManageInvitations || bulkLock.current || individualSends || deleteLock.current || editingGuest || !pendingEmails.length) return
     bulkLock.current = true
     setBulkSending(true)
     setActionError('')
@@ -574,7 +605,10 @@ function GuestsPage() {
       setArrivalLoading(null)
     }
   }
-  function exportCsv() { downloadGuestCsv(data) }
+  function exportCsv() {
+    if (!canManageInvitations) return
+    downloadGuestCsv(data)
+  }
   function parseCsv(source: string) {
     const normalized = source.replace(/^\uFEFF/, '')
     const firstLine = normalized.split(/\r?\n/, 1)[0] || ''
@@ -608,6 +642,7 @@ function GuestsPage() {
     return value.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]/g, '')
   }
   async function importCsv(e: React.ChangeEvent<HTMLInputElement>) {
+    if (!canManageInvitations) return
     const file = e.target.files?.[0]
     if (!file) return
     const rows = parseCsv(await file.text())
@@ -651,7 +686,7 @@ function GuestsPage() {
     e.target.value = ''
   }
   const count = (status: GuestStatus) => data.filter(g => g.status === status).length
-  return <section className="dashboard"><div className="page-heading"><div><p className="eyebrow orange">Gestión de invitados</p><h2>Lista de invitados <span>{data.length}</span></h2><p className="muted">Consulta respuestas y administra tus invitaciones.</p></div><div className="page-actions"><button className="button button-orange" disabled={bulkSending || deletingGuest !== null || editingGuest !== null || individualSends > 0 || isPending || isError || pendingEmails.length === 0} onClick={() => void sendAllInvitations()}><Send size={16} /> {bulkSending ? 'Enviando invitaciones…' : `Enviar todas las invitaciones (${pendingEmails.length})`}</button><input ref={fileInput} className="hidden-file" type="file" accept=".csv,text/csv" onChange={importCsv} /><button className="button button-dark" onClick={exportCsv}><Download size={16} /> Exportar CSV</button><button className="button button-dark" onClick={() => fileInput.current?.click()}><Upload size={16} /> Cargar masivamente</button><button className="button button-orange" onClick={() => setShowNew(true)}><Users size={16} /> Agregar invitado</button></div></div><div className="filter-bar"><div className="search-box"><Search size={17} /><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar por nombre, correo, celular o empresa" /></div><label className="filter-button"><Filter size={16} /><select aria-label="Filtrar por respuesta" value={filterStatus} onChange={e => setFilterStatus(e.target.value as 'all' | GuestStatus)}><option value="all">Todos los estados</option><option value="Confirmado">Confirmados</option><option value="Pendiente">Pendientes de respuesta</option><option value="Canceló">Cancelaron</option></select></label><label className="filter-button"><Send size={16} /><select aria-label="Filtrar por envío de invitación" value={filterDelivery} onChange={e => setFilterDelivery(e.target.value)}><option value="all">Todas las invitaciones</option><option value="sent">Enviadas por algún canal</option><option value="pending">Sin enviar por ningún canal</option><option value="email">Correo enviado</option><option value="whatsapp">WhatsApp enviado</option></select></label></div><p className="guest-list-summary" aria-live="polite">Mostrando {filtered.length} de {data.length} invitados · Nombre A–Z</p><p className="guest-list-summary">El envío masivo incluye todos los contactos con correo y sin envíos registrados por correo ni WhatsApp, sin importar los filtros.</p>{bulkNotice && <p className="guest-list-summary" role="status">{bulkNotice}</p>}{actionError && <p className="form-error guest-action-error">{actionError}</p>}<div className="panel guests-table-panel"><div className="table-tabs"><button className={filterStatus === 'all' ? 'selected' : ''} onClick={() => setFilterStatus('all')}>Todos <b>{data.length}</b></button><button className={filterStatus === 'Confirmado' ? 'selected' : ''} onClick={() => setFilterStatus('Confirmado')}>Confirmados <b>{count('Confirmado')}</b></button><button className={filterStatus === 'Pendiente' ? 'selected' : ''} onClick={() => setFilterStatus('Pendiente')}>Pendientes <b>{count('Pendiente')}</b></button><button className={filterStatus === 'Canceló' ? 'selected' : ''} onClick={() => setFilterStatus('Canceló')}>Cancelaron <b>{count('Canceló')}</b></button></div><div className="table-head"><span>INVITADO</span><span>EMPRESA</span><span>CORREO</span><span>RESPUESTA</span><span>ASISTENCIA</span><span>ACCIONES</span></div>{filtered.length === 0 && <p className="guest-list-empty">No hay invitados que coincidan con estos filtros.</p>}{filtered.map(g => <div className="table-line" key={g.id}><div className="guest-name"><div className="table-avatar">{g.name.split(' ').map(n => n[0]).slice(0, 2).join('')}</div><span><strong>{g.name}</strong><small>{g.email || g.phone}</small></span></div><span>{g.company}</span><InvitationState guest={g} disabled={bulkSending || deletingGuest !== null || editingGuest !== null} /><span className={`status status-${g.status === 'Confirmado' ? 'confirmed' : g.status === 'Canceló' ? 'cancelled' : 'pending'}`}><i></i>{g.status}</span><span className={g.checkedIn ? 'checked-label' : 'muted'}>{g.checkedIn ? <><CheckCircle2 size={14} /> Presente</> : 'No ha llegado'}</span><div className="guest-row-actions"><button className="row-action" disabled={passLoading === g.id} onClick={() => void openPass(g)}><Eye size={15} /> {passLoading === g.id ? 'Abriendo…' : 'Ver entrada'}</button><button className="row-action arrival-action" disabled={arrivalLoading !== null || deletingGuest !== null} onClick={() => void markArrival(g)}><CheckCircle2 size={15} /> {arrivalLoading === g.id ? 'Guardando…' : g.checkedIn ? 'Marcar como no ha llegado' : 'Registrar llegada'}</button><InvitationState guest={g} channel="whatsapp" disabled={bulkSending || deletingGuest !== null || editingGuest !== null} menuActions={<><button className="row-action" disabled={cancellingGuest !== null || deletingGuest !== null || g.status === 'Canceló'} onClick={() => void cancelGuest(g)}><X size={15} /> {cancellingGuest === g.id ? 'Guardando…' : g.status === 'Canceló' ? 'Cancelación registrada' : 'Marcar como canceló'}</button><button className="row-action" disabled={bulkSending || individualSends > 0 || deletingGuest !== null} onClick={() => setEditingGuest(g)}><Pencil size={15} /> Editar</button><button className="row-action" disabled={bulkSending || individualSends > 0 || deletingGuest !== null || cancellingGuest !== null || arrivalLoading !== null} onClick={() => void removeGuest(g)}><Trash2 size={15} /> {deletingGuest === g.id ? 'Eliminando…' : 'Eliminar'}</button></>} /></div></div>)}</div>{showNew && <GuestFormModal onClose={() => setShowNew(false)} />}{editingGuest && <GuestFormModal key={editingGuest.id} guest={editingGuest} onClose={() => setEditingGuest(null)} />}{passGuest && <GuestPassModal guest={passGuest} token={passToken} onClose={() => { setPassGuest(null); setPassToken('') }} />}</section>
+  return <section className="dashboard"><div className="page-heading"><div><p className="eyebrow orange">Gestión de invitados</p><h2>Lista de invitados <span>{data.length}</span></h2><p className="muted">Consulta respuestas y administra tus invitaciones.</p></div>{canManageInvitations && <div className="page-actions"><button className="button button-orange" disabled={bulkSending || deletingGuest !== null || editingGuest !== null || individualSends > 0 || isPending || isError || pendingEmails.length === 0} onClick={() => void sendAllInvitations()}><Send size={16} /> {bulkSending ? 'Enviando invitaciones…' : `Enviar todas las invitaciones (${pendingEmails.length})`}</button><input ref={fileInput} className="hidden-file" type="file" accept=".csv,text/csv" onChange={importCsv} /><button className="button button-dark" onClick={exportCsv}><Download size={16} /> Exportar CSV</button><button className="button button-dark" onClick={() => fileInput.current?.click()}><Upload size={16} /> Cargar masivamente</button><button className="button button-orange" onClick={() => setShowNew(true)}><Users size={16} /> Agregar invitado</button></div>}</div><div className="filter-bar"><div className="search-box"><Search size={17} /><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar por nombre, correo, celular o empresa" /></div><label className="filter-button"><Filter size={16} /><select aria-label="Filtrar por respuesta" value={filterStatus} onChange={e => setFilterStatus(e.target.value as 'all' | GuestStatus)}><option value="all">Todos los estados</option><option value="Confirmado">Confirmados</option><option value="Pendiente">Pendientes de respuesta</option><option value="Canceló">Cancelaron</option></select></label><label className="filter-button"><Send size={16} /><select aria-label="Filtrar por envío de invitación" value={filterDelivery} onChange={e => setFilterDelivery(e.target.value)}><option value="all">Todas las invitaciones</option><option value="sent">Enviadas por algún canal</option><option value="pending">Sin enviar por ningún canal</option><option value="email">Correo enviado</option><option value="whatsapp">WhatsApp enviado</option></select></label></div><p className="guest-list-summary" aria-live="polite">Mostrando {filtered.length} de {data.length} invitados · Nombre A–Z</p>{canManageInvitations && <p className="guest-list-summary">El envío masivo incluye todos los contactos con correo y sin envíos registrados por correo ni WhatsApp, sin importar los filtros.</p>}{bulkNotice && <p className="guest-list-summary" role="status">{bulkNotice}</p>}{actionError && <p className="form-error guest-action-error">{actionError}</p>}<div className="panel guests-table-panel"><div className="table-tabs"><button className={filterStatus === 'all' ? 'selected' : ''} onClick={() => setFilterStatus('all')}>Todos <b>{data.length}</b></button><button className={filterStatus === 'Confirmado' ? 'selected' : ''} onClick={() => setFilterStatus('Confirmado')}>Confirmados <b>{count('Confirmado')}</b></button><button className={filterStatus === 'Pendiente' ? 'selected' : ''} onClick={() => setFilterStatus('Pendiente')}>Pendientes <b>{count('Pendiente')}</b></button><button className={filterStatus === 'Canceló' ? 'selected' : ''} onClick={() => setFilterStatus('Canceló')}>Cancelaron <b>{count('Canceló')}</b></button></div><div className="table-head"><span>INVITADO</span><span>EMPRESA</span><span>CORREO</span><span>RESPUESTA</span><span>ASISTENCIA</span><span>ACCIONES</span></div>{filtered.length === 0 && <p className="guest-list-empty">No hay invitados que coincidan con estos filtros.</p>}{filtered.map(g => <div className="table-line" key={g.id}><div className="guest-name"><div className="table-avatar">{g.name.split(' ').map(n => n[0]).slice(0, 2).join('')}</div><span><strong>{g.name}</strong><small>{g.email || g.phone}</small></span></div><span>{g.company}</span><InvitationState guest={g} disabled={bulkSending || deletingGuest !== null || editingGuest !== null} /><span className={`status status-${g.status === 'Confirmado' ? 'confirmed' : g.status === 'Canceló' ? 'cancelled' : 'pending'}`}><i></i>{g.status}</span><span className={g.checkedIn ? 'checked-label' : 'muted'}>{g.checkedIn ? <><CheckCircle2 size={14} /> Presente</> : 'No ha llegado'}</span><div className="guest-row-actions"><button className="row-action" disabled={passLoading === g.id} onClick={() => void openPass(g)}><Eye size={15} /> {passLoading === g.id ? 'Abriendo…' : 'Ver entrada'}</button><button className="row-action arrival-action" disabled={arrivalLoading !== null || deletingGuest !== null} onClick={() => void markArrival(g)}><CheckCircle2 size={15} /> {arrivalLoading === g.id ? 'Guardando…' : g.checkedIn ? 'Marcar como no ha llegado' : 'Registrar llegada'}</button><InvitationState guest={g} channel="whatsapp" disabled={bulkSending || deletingGuest !== null || editingGuest !== null} menuActions={<><button className="row-action" disabled={cancellingGuest !== null || deletingGuest !== null || g.status === 'Canceló'} onClick={() => void cancelGuest(g)}><X size={15} /> {cancellingGuest === g.id ? 'Guardando…' : g.status === 'Canceló' ? 'Cancelación registrada' : 'Marcar como canceló'}</button><button className="row-action" disabled={bulkSending || individualSends > 0 || deletingGuest !== null} onClick={() => setEditingGuest(g)}><Pencil size={15} /> Editar</button><button className="row-action" disabled={bulkSending || individualSends > 0 || deletingGuest !== null || cancellingGuest !== null || arrivalLoading !== null} onClick={() => void removeGuest(g)}><Trash2 size={15} /> {deletingGuest === g.id ? 'Eliminando…' : 'Eliminar'}</button></>} /></div></div>)}</div>{canManageInvitations && showNew && <GuestFormModal onClose={() => setShowNew(false)} />}{editingGuest && <GuestFormModal key={editingGuest.id} guest={editingGuest} onClose={() => setEditingGuest(null)} />}{passGuest && <GuestPassModal guest={passGuest} token={passToken} onClose={() => { setPassGuest(null); setPassToken('') }} />}</section>
 }
 
 function CheckInPage() {
