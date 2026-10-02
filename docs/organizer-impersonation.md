@@ -28,7 +28,7 @@ Se verificó en navegador local: entrada como Equipo, ausencia de los controles 
 
 ## Orden de publicación
 
-1. Aplicar exclusivamente `supabase/migrations/20261002001902_organizer_impersonation.sql` al proyecto RZ `klhonixkiveafbuqaqim`.
+1. Aplicar exclusivamente `supabase/migrations/20261002004914_organizer_impersonation.sql` al proyecto RZ `klhonixkiveafbuqaqim`.
 2. Validar el contexto del organizador y los asesores de seguridad.
 3. Desplegar `supabase/functions/send-invitation/index.ts`, manteniendo `verify_jwt=true`.
 4. Publicar el frontend y verificar el control en `/admin`.
