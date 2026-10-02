@@ -24,7 +24,7 @@ function setup({ missing = false, error = null, demo = false } = {}) {
     }
     return chain
   } }
-  vm.runInNewContext(compiled, { exports: api, supabase: demo ? null : supabase })
+  vm.runInNewContext(compiled, { exports: api, organizerAction: fn => fn(), supabase: demo ? null : supabase })
   return { api, calls }
 }
 

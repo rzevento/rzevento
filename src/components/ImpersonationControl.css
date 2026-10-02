@@ -1,0 +1,25 @@
+.impersonation-bar { position: sticky; top: 0; z-index: 30; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; padding: 14px 32px; background: #f3f5f7; border-bottom: 1px solid #d9e0e6; color: #283b4e; }
+.impersonation-bar.is-active { background: #fff1d4; color: #65440f; border-color: #e2c78b; box-shadow: 0 2px 10px #65440f0a; }
+.impersonation-status { display: flex; align-items: center; gap: 12px; }
+.impersonation-status strong, .impersonation-status span { display: block; }
+.impersonation-status strong { font-size: 14px; line-height: 1.5; }
+.impersonation-status span { font-size: 12px; line-height: 1.5; }
+.impersonation-bar > .outline-button { flex-shrink: 0; background: #fff; color: inherit; font-size: 12px; min-height: 40px; }
+.impersonation-picker { flex-basis: 100%; padding: 20px; background: white; color: #28241f; border: 1px solid #d9e0e6; border-radius: 12px; max-width: 650px; margin-left: auto; }
+.impersonation-picker-heading { display: flex; justify-content: space-between; gap: 16px; }
+.impersonation-picker-heading p { color: #69645d; font-size: 12px; line-height: 1.6; margin: 6px 0 14px; }
+.impersonation-search { display: flex; gap: 8px; align-items: center; border: 1px solid #d9e0e6; border-radius: 8px; padding: 10px; }
+.impersonation-search input { border: 0; outline: none; font: inherit; font-size: 14px; width: 100%; }
+.impersonation-users { margin: 12px 0; padding: 0; border: 0; max-height: 255px; overflow: auto; }
+.impersonation-users label { display: flex; align-items: center; gap: 10px; padding: 12px 8px; border-radius: 8px; cursor: pointer; }
+.impersonation-users label.is-selected { background: #eef3f7; }
+.impersonation-users span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.impersonation-users strong, .impersonation-users small { display: block; font-size: 13px; }
+.impersonation-users small { margin-top: 4px; color: #69645d; font-size: 12px; }
+.impersonation-users b { font-size: 11px; font-weight: 500; padding: 5px 7px; border-radius: 5px; background: #f2f0ec; }
+.impersonation-error { flex-basis: 100%; margin: 0; color: #a43125; font-size: 13px; }
+.impersonation-bar :focus-visible { outline: 3px solid #3e77aa; outline-offset: 3px; }
+.impersonation-busy { padding: 50px; text-align: center; }
+@media (max-width: 760px) { .impersonation-bar { padding: 12px 16px; gap: 10px; } .impersonation-status { align-items: flex-start; } .impersonation-status span { max-width: 270px; } .impersonation-picker { padding: 14px; } }
+
+.impersonation-users legend { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }

@@ -23,6 +23,7 @@ const dashboardModel = loadDashboardModule('../src/lib/dashboard.ts')
 const dailyChart = loadDashboardModule('../src/components/DailyConfirmations.tsx', { '../lib/dashboard': dashboardModel })
 const { default: EventDashboard } = loadDashboardModule('../src/components/EventDashboard.tsx', { '../lib/dashboard': dashboardModel, './DailyConfirmations': dailyChart })
 
+const { default: ImpersonationControl } = loadDashboardModule('../src/components/ImpersonationControl.tsx', { '../lib/supabase': {}, '@tanstack/react-query': { useQuery: () => ({ data: [], isPending: false }) } })
 const source = readFileSync(new URL('../src/main.tsx', import.meta.url), 'utf8')
 const ast = ts.createSourceFile('main.tsx', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
 // Render the actual page components; external data and session are controlled fixtures.
@@ -49,10 +50,10 @@ function render(component, { role = 'staff', profilePending = false, profileErro
       const index = stateIndex++
       return React.useState(index < stateValues.length ? stateValues[index] : initial)
     },
-    OrganizerRoleContext, useCanManageInvitations, EventDashboard,
+    OrganizerRoleContext, useCanManageInvitations, EventDashboard, ImpersonationControl, getImpersonationId: () => null,
     useQuery({ queryKey }) {
       return queryKey[0] === 'organizer-profile'
-        ? { data: profilePending || profileError ? undefined : { displayName: 'Persona de prueba', role: 'Equipo', roleCode: role }, isPending: profilePending, isError: profileError }
+        ? { data: profilePending || profileError ? undefined : { displayName: 'Persona de prueba', role: 'Equipo', roleCode: role, actorIsAdmin: role === 'admin', actorUserId: 'user-1', userId: 'user-1', eventId: 'event-1' }, isPending: profilePending, isError: profileError }
         : { data, isPending: false, isError: false }
     },
     useMutation: () => ({ mutate() {} }), useIsMutating: () => 0,
@@ -98,18 +99,19 @@ test('pending and failed profile checks never render privileged controls or the 
     assert.ok(!html.includes('Contenido del panel'))
   }
 })
-test('membership role, not editable profile metadata, determines permission', async () => {
+test('effective profile comes from the server authorization context', async () => {
   const source = readFileSync(new URL('../src/lib/supabase.ts', import.meta.url), 'utf8')
-  const profileSource = source.slice(source.indexOf('export async function getCurrentOrganizerProfile('), source.indexOf('export async function submitRsvp('))
-  const chain = data => ({ select() { return this }, eq() { return this }, order() { return this }, limit() { return this }, async maybeSingle() { return { data, error: null } } })
+  const profileSource = source.slice(source.indexOf('export async function getCurrentOrganizerProfile('), source.indexOf('export async function startOrganizerImpersonation('))
   const sandbox = { exports: {}, supabase: {
-    auth: { getUser: async () => ({ data: { user: { id: 'staff-user', user_metadata: { role: 'admin', full_name: 'Administrador' } } }, error: null }) },
-    from: table => chain(table === 'events' ? { id: 'event-1' } : { role: 'staff', display_name: 'Persona' }),
+    rpc: async name => { assert.equal(name, 'get_organizer_context'); return {data:{roleCode:'staff',role:'Equipo'},error:null} },
   } }
   vm.runInNewContext(compile(profileSource), sandbox)
   const result = await sandbox.exports.getCurrentOrganizerProfile()
   assert.equal(result.data.roleCode, 'staff')
-  assert.equal(result.data.role, 'Equipo')
+})
+test('only the real administrator sees the impersonation control', () => {
+  assert.match(render('AdminLayout', {role:'admin'}), /Ver como usuario/)
+  for (const role of ['staff','viewer',null,'unexpected']) assert.doesNotMatch(render('AdminLayout', {role}), /Ver como usuario/)
 })
 
 test('administrator export button downloads the guest list', async () => {

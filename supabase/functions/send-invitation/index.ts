@@ -2,7 +2,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.111.0'
 
 const cors = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-rz-impersonation',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 }
 const json = (body: Record<string, unknown>, status = 200) =>
@@ -34,15 +34,14 @@ Deno.serve(async (request) => {
 
     // Keep database reads and writes scoped to the authenticated organizer's RLS.
     const userClient = createClient(supabaseUrl, publicKey, {
-      global: { headers: { Authorization: authorization } },
+      global: { headers: { Authorization: authorization, ...(request.headers.get('x-rz-impersonation') ? { 'x-rz-impersonation': request.headers.get('x-rz-impersonation')! } : {}) } },
       auth: { persistSession: false, autoRefreshToken: false },
     })
     const { data: guest, error: guestError } = await userClient.from('guests')
       .select('id, event_id, full_name, email').eq('id', guestId).maybeSingle()
     if (guestError || !guest) return json({ error: 'Invitado no encontrado o sin acceso' }, 404)
-    const { data: member, error: memberError } = await userClient.from('event_members')
-      .select('role').eq('event_id', guest.event_id).eq('user_id', authData.user.id).maybeSingle()
-    if (memberError || member?.role !== 'admin') return json({ error: 'Solo un administrador puede enviar invitaciones' }, 403)
+    const { data: member, error: memberError } = await userClient.rpc('get_organizer_context', { target_event_id: guest.event_id })
+    if (memberError || member?.roleCode !== 'admin') return json({ error: 'Solo un administrador puede enviar invitaciones' }, 403)
     if (!guest.email) return json({ error: 'Este invitado no tiene correo electrónico' }, 400)
 
     const admin = userClient
@@ -71,6 +70,9 @@ Deno.serve(async (request) => {
       return json({ error: 'Las URLs de Make y del sitio publicado deben ser direcciones HTTPS válidas' }, 500)
     }
     const invitationUrl = new URL(`/registro/${encodeURIComponent(invitation.token)}`, siteUrl.origin).href
+
+    const { error: auditError } = await userClient.rpc('record_organizer_email_attempt', { target_guest_id: guest.id, is_resend: input?.resend === true })
+    if (auditError) return json({ error: 'No se pudo validar y registrar el envío. Vuelve a tu cuenta e intenta de nuevo.' }, 403)
 
     // Only an explicit successful scenario response counts as sent, never "Accepted".
     try {

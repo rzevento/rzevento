@@ -12,10 +12,12 @@ function setup(options = {}) {
   const env = { SUPABASE_URL: 'https://test.supabase.co', SUPABASE_ANON_KEY: 'public', SUPABASE_SERVICE_ROLE_KEY: 'secret', MAKE_WEBHOOK_URL: 'https://hook.make.com/test', MAKE_WEBHOOK_API_KEY: 'test-key', PUBLIC_SITE_URL: 'https://evento.example.com', ...options.env }
   const createClient = (_url, key, config) => ({
     auth: { getUser: async () => ({ data: { user: options.invalidAuth ? null : { id: 'admin' } }, error: null }) },
+    rpc: async (name) => { if (name === 'record_organizer_email_attempt') return {error: options.auditError ? new Error('denied') : null}; assert.equal(name, 'get_organizer_context'); return { data: { roleCode: options.role || 'admin' }, error: options.contextError ? new Error('Session expired') : null } },
     from(table) {
       if (table === 'invitations') {
         assert.equal(key, 'public')
         assert.equal(config.global?.headers.Authorization, 'Bearer valid')
+        assert.equal(config.global?.headers['x-rz-impersonation'], options.impersonation ? 'session-1' : undefined)
       }
       let updating = false
       const chain = {
@@ -42,7 +44,7 @@ function setup(options = {}) {
       return new Response(options.reply ?? '{"ok":true}', { status: options.status || 200 })
     },
   })
-  return { call: async (body = {guest_id:id}, auth = true) => handler(new Request('https://test/function', {method:'POST',headers: auth ? {Authorization:'Bearer valid'} : {},body:typeof body === 'string' ? body : JSON.stringify(body)})), counts: () => ({sends,updates}), payload: () => sentPayload }
+  return { call: async (body = {guest_id:id}, auth = true) => handler(new Request('https://test/function', {method:'POST',headers: auth ? {Authorization:'Bearer valid', ...(options.impersonation ? {'x-rz-impersonation':'session-1'} : {})} : {},body:typeof body === 'string' ? body : JSON.stringify(body)})), counts: () => ({sends,updates}), payload: () => sentPayload }
 }
 test('validates authentication, input and event admin membership before sending', async () => {
   for(const [opts,body,auth,status] of [[{}, {guest_id:id},false,401],[{invalidAuth:true},{guest_id:id},true,401],[{},'{bad',true,400],[{role:'staff'},{guest_id:id},true,403],[{noGuest:true},{guest_id:id},true,404],[{noEmail:true},{guest_id:id},true,400]]) {
@@ -101,4 +103,15 @@ test('a failed resend preserves the previously recorded send', async () => {
   const app = setup({ alreadySent: true, timeout: true })
   assert.equal((await app.call({ guest_id: id, resend: true })).status, 502)
   assert.deepEqual(app.counts(), { sends: 1, updates: 0 })
+})
+
+test('impersonated email enforces the effective role and rejects expired sessions before delivery', async () => {
+  for (const options of [{role:'staff'}, {role:'viewer'}, {contextError:true}, {auditError:true}]) {
+    const app=setup({...options, impersonation:true})
+    assert.equal((await app.call()).status,403)
+    assert.deepEqual(app.counts(), {sends:0,updates:0})
+  }
+  const admin=setup({impersonation:true})
+  assert.equal((await admin.call()).status,200)
+  assert.deepEqual(admin.counts(), {sends:1,updates:1})
 })
