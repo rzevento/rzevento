@@ -23,3 +23,6 @@
 @media (max-width: 760px) { .impersonation-bar { padding: 12px 16px; gap: 10px; } .impersonation-status { align-items: flex-start; } .impersonation-status span { max-width: 270px; } .impersonation-picker { padding: 14px; } }
 
 .impersonation-users legend { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+/* Clip horizontal overflow without creating a scrolling ancestor for the banner. */
+html:has(.impersonation-bar), body:has(.impersonation-bar), #root:has(.impersonation-bar), .admin-shell:has(.impersonation-bar), .admin-main:has(.impersonation-bar) { overflow-x: clip; overflow-y: visible; }
+.impersonation-bar { z-index: 15; }
