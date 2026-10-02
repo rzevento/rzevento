@@ -1,6 +1,6 @@
 # Ver como usuario
 
-Implementación preparada, pendiente de aprobación para activar en producción.
+Acceso temporal para que el administrador actúe con el perfil de otro miembro del mismo evento.
 
 - Solo un administrador real del evento puede iniciar una sesión para otro miembro de ese mismo evento.
 - La sesión dura 30 minutos. La franja superior muestra el nombre, el perfil, que los cambios se guardan y el botón para volver.
@@ -26,11 +26,13 @@ PGLITE_MODULE=/ruta/temporal/node_modules/@electric-sql/pglite/dist/index.js nod
 
 Se verificó en navegador local: entrada como Equipo, ausencia de los controles exclusivos de administrador, registro de llegada de un invitado ficticio y regreso a la cuenta real. Las pruebas no enviaron correos ni modificaron invitados reales.
 
-## Activación pendiente
+## Orden de publicación
 
 1. Aplicar exclusivamente `supabase/migrations/20261002001902_organizer_impersonation.sql` al proyecto RZ `klhonixkiveafbuqaqim`.
 2. Validar el contexto del organizador y los asesores de seguridad.
 3. Desplegar `supabase/functions/send-invitation/index.ts`, manteniendo `verify_jwt=true`.
 4. Publicar el frontend y verificar el control en `/admin`.
 
-La revisión automática rechazó la migración de producción por requerir aprobación explícita del cambio concreto de autorización y auditoría. No fue aplicada. Actualmente el evento tiene un solo miembro; el selector requiere otro usuario asociado para una prueba real entre cuentas.
+El usuario autorizó explícitamente la activación en producción el 1 de octubre de 2026. La migración y la versión 6 de la función de envío se activaron con verificación JWT. La consulta posterior confirmó el contexto de administrador, el bloqueo de acceso anónimo a la impersonación y la privacidad de la tabla de sesiones; se conservaron los 157 invitados y el único miembro existente. El selector necesita otro usuario asociado para realizar una prueba real entre cuentas.
+
+El asesor de seguridad informa que la tabla privada no tiene políticas: es intencional, porque el acceso directo está revocado y solo las funciones autorizadas pueden consultarla. Véase [RLS sin políticas](https://supabase.com/docs/guides/database/database-linter?lint=0008_rls_enabled_no_policy). Los avisos sobre funciones públicas de registro y [protección de contraseñas filtradas](https://supabase.com/docs/guides/auth/password-security#password-strength-and-leaked-password-protection) corresponden a la configuración existente y no se modificaron en este cambio.
