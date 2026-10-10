@@ -31,7 +31,7 @@ El enlace individual también permite cancelar una confirmación; la operación 
 
 ## Importar invitados
 
-Desde `Admin > Invitados > Importar CSV` se acepta una lista con encabezados `nombre`, `correo`, `telefono`, `empresa` y `ciudad` (también reconoce sus equivalentes en inglés). En producción, cada fila se guarda en el evento activo y crea un token de invitación por persona.
+Desde `Admin > Invitados > Cargar masivamente` se acepta una lista con encabezados `nombre`, `correo`, `telefono` y `empresa` (también reconoce sus equivalentes en inglés). En producción, cada fila se guarda en el evento activo y crea un token de invitación por persona.
 
 ## Invitaciones manuales por WhatsApp
 
