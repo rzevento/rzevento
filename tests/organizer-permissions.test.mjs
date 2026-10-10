@@ -13,7 +13,7 @@ const compile = source => ts.transpileModule(source, { compilerOptions: {
 } }).outputText
 const permissions = { exports: {}, require }
 vm.runInNewContext(compile(readFileSync(new URL('../src/lib/organizer-permissions.ts', import.meta.url), 'utf8')), permissions)
-const { OrganizerRoleContext, useCanManageInvitations } = permissions.exports
+const { OrganizerRoleContext, useCanManageInvitations, useCanSendInvitations } = permissions.exports
 function loadDashboardModule(path, dependencies = {}) {
   const context = { exports: {}, require: name => name.endsWith('.css') ? {} : dependencies[name] || require(name) }
   vm.runInNewContext(compile(readFileSync(new URL(path, import.meta.url), 'utf8')), context)
@@ -50,8 +50,9 @@ function render(component, { role = 'staff', profilePending = false, profileErro
       const index = stateIndex++
       return React.useState(index < stateValues.length ? stateValues[index] : initial)
     },
-    OrganizerRoleContext, useCanManageInvitations, EventDashboard, ImpersonationControl, getImpersonationId: () => null,
+    OrganizerRoleContext, useCanManageInvitations, useCanSendInvitations, EventDashboard, ImpersonationControl, getImpersonationId: () => null,
     useQuery({ queryKey }) {
+      if (queryKey[0] === 'event-members') return { data: [{ userId: 'user-1', displayName: 'Administradora', email: 'admin@example.com', role: 'Administrador' }], isLoading: false }
       return queryKey[0] === 'organizer-profile'
         ? { data: profilePending || profileError ? undefined : { displayName: 'Persona de prueba', role: 'Equipo', roleCode: role, actorIsAdmin: role === 'admin', actorUserId: 'user-1', userId: 'user-1', eventId: 'event-1' }, isPending: profilePending, isError: profileError }
         : { data, isPending: false, isError: false }
@@ -88,6 +89,19 @@ for (const role of ['staff', 'viewer', null, 'unexpected']) {
     }
   })
 }
+test('only administrator can open configuration or load guests', () => {
+  for (const role of ['leader', 'staff', 'viewer', null, 'unexpected']) {
+    assert.doesNotMatch(render('AdminLayout', { role }), /Configuración/)
+    assert.doesNotMatch(render('GuestsPage', { role }), /Cargar masivamente|Agregar invitado/)
+    const settings = render('ConfigurationPage', { role })
+    assert.match(settings, /No tienes acceso a la configuración/)
+    assert.doesNotMatch(settings, /Usuarios autorizados/)
+  }
+  assert.match(render('AdminLayout', { role: 'admin' }), /Configuración/)
+  assert.match(render('GuestsPage', { role: 'admin' }), /Cargar masivamente/)
+  assert.match(render('ConfigurationPage', { role: 'admin' }), /Usuarios autorizados/)
+})
+
 test('administrator retains header, bulk, export, import, creation and individual email actions', () => {
   const html = render('AdminLayout', { role: 'admin' }) + render('SummaryPage', { role: 'admin' }) + render('GuestsPage', { role: 'admin' }) + render('GuestsPage', { role: 'admin', sent: true })
   for (const label of restrictedLabels.filter(label => label !== 'Abrir WhatsApp')) assert.ok(html.includes(label), `admin missing ${label}`)
@@ -123,4 +137,15 @@ test('administrator export button downloads the guest list', async () => {
   button.onClick()
   assert.equal(downloaded.filename, 'invitados-familias-empresarias.csv')
   assert.match(await downloaded.blob.text(), /test@example.com/)
+})
+
+test('leader can send existing invitations but cannot manage guests or open settings', () => {
+  const shell = render('AdminLayout', { role: 'leader' })
+  const guests = render('GuestsPage', { role: 'leader' })
+  const settings = render('ConfigurationPage', { role: 'leader' })
+  assert.doesNotMatch(shell, /Configuración|Nueva invitación|Descargar lista de invitados/)
+  for (const label of ['Enviar todas las invitaciones', 'Enviar correo', 'Marcar WhatsApp enviado']) assert.match(guests, new RegExp(label))
+  for (const label of ['Exportar CSV', 'Cargar masivamente', 'Agregar invitado', 'Editar', 'Eliminar']) assert.doesNotMatch(guests, new RegExp(label))
+  assert.match(settings, /No tienes acceso a la configuración/)
+  assert.doesNotMatch(settings, /Usuarios autorizados/)
 })

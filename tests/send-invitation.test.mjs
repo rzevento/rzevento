@@ -15,9 +15,10 @@ function setup(options = {}) {
     rpc: async (name) => { if (name === 'record_organizer_email_attempt') return {error: options.auditError ? new Error('denied') : null}; assert.equal(name, 'get_organizer_context'); return { data: { roleCode: options.role || 'admin' }, error: options.contextError ? new Error('Session expired') : null } },
     from(table) {
       if (table === 'invitations') {
-        assert.equal(key, 'public')
-        assert.equal(config.global?.headers.Authorization, 'Bearer valid')
-        assert.equal(config.global?.headers['x-rz-impersonation'], options.impersonation ? 'session-1' : undefined)
+        if (key === 'public') {
+          assert.equal(config.global?.headers.Authorization, 'Bearer valid')
+          assert.equal(config.global?.headers['x-rz-impersonation'], options.impersonation ? 'session-1' : undefined)
+        } else assert.equal(key, 'secret')
       }
       let updating = false
       const chain = {
@@ -46,7 +47,7 @@ function setup(options = {}) {
   })
   return { call: async (body = {guest_id:id}, auth = true) => handler(new Request('https://test/function', {method:'POST',headers: auth ? {Authorization:'Bearer valid', ...(options.impersonation ? {'x-rz-impersonation':'session-1'} : {})} : {},body:typeof body === 'string' ? body : JSON.stringify(body)})), counts: () => ({sends,updates}), payload: () => sentPayload }
 }
-test('validates authentication, input and event admin membership before sending', async () => {
+test('validates authentication, input and permitted membership before sending', async () => {
   for(const [opts,body,auth,status] of [[{}, {guest_id:id},false,401],[{invalidAuth:true},{guest_id:id},true,401],[{},'{bad',true,400],[{role:'staff'},{guest_id:id},true,403],[{noGuest:true},{guest_id:id},true,404],[{noEmail:true},{guest_id:id},true,400]]) {
     const app=setup(opts); assert.equal((await app.call(body,auth)).status,status); assert.deepEqual(app.counts(),{sends:0,updates:0})
   }
@@ -91,7 +92,7 @@ test('explicit resend keeps the personalized link and records a successful deliv
   assert.deepEqual(app.counts(), { sends: 1, updates: 1 })
   assert.equal(app.payload().invitation_url, 'https://evento.example.com/registro/token')
 })
-test('resend requires boolean true and still enforces admin access', async () => {
+test('resend requires boolean true and still enforces role access', async () => {
   const app = setup({ alreadySent: true })
   await app.call({ guest_id: id, resend: 'true' })
   assert.deepEqual(app.counts(), { sends: 0, updates: 0 })
@@ -114,4 +115,13 @@ test('impersonated email enforces the effective role and rejects expired session
   const admin=setup({impersonation:true})
   assert.equal((await admin.call()).status,200)
   assert.deepEqual(admin.counts(), {sends:1,updates:1})
+})
+
+test('leader can send and resend existing invitations', async () => {
+  const leader = setup({ role: 'leader' })
+  assert.equal((await leader.call()).status, 200)
+  assert.deepEqual(leader.counts(), { sends: 1, updates: 1 })
+  const resend = setup({ role: 'leader', alreadySent: true })
+  assert.equal((await resend.call({ guest_id: id, resend: true })).status, 200)
+  assert.deepEqual(resend.counts(), { sends: 1, updates: 1 })
 })

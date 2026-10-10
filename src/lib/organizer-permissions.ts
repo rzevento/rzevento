@@ -7,6 +7,10 @@ export function useCanManageInvitations() {
   return useContext(OrganizerRoleContext) === 'admin'
 }
 
+export function useCanSendInvitations() {
+  return ['admin', 'leader'].includes(useContext(OrganizerRoleContext) || '')
+}
+
 export type OrganizerProfile = {
   eventId: string
   userId: string

@@ -14,7 +14,7 @@ Deno.serve(async (request) => {
   if (request.method === 'OPTIONS') return new Response('ok', { headers: cors })
   if (request.method !== 'POST') return json({ error: 'Método no permitido' }, 405)
   const authorization = request.headers.get('Authorization') || ''
-  if (!/^Bearer\s+\S+$/i.test(authorization)) return json({ error: 'Inicia sesión como administrador' }, 401)
+  if (!/^Bearer\s+\S+$/i.test(authorization)) return json({ error: 'Inicia sesión para enviar invitaciones' }, 401)
 
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')
@@ -41,7 +41,7 @@ Deno.serve(async (request) => {
       .select('id, event_id, full_name, email').eq('id', guestId).maybeSingle()
     if (guestError || !guest) return json({ error: 'Invitado no encontrado o sin acceso' }, 404)
     const { data: member, error: memberError } = await userClient.rpc('get_organizer_context', { target_event_id: guest.event_id })
-    if (memberError || member?.roleCode !== 'admin') return json({ error: 'Solo un administrador puede enviar invitaciones' }, 403)
+    if (memberError || !['admin', 'leader'].includes(member?.roleCode || '')) return json({ error: 'No tienes permiso para enviar invitaciones' }, 403)
     if (!guest.email) return json({ error: 'Este invitado no tiene correo electrónico' }, 400)
 
     const admin = userClient
@@ -94,9 +94,10 @@ Deno.serve(async (request) => {
       return uncertain()
     }
 
-    const { data: saved, error: updateError } = await admin.from('invitations')
+    const serviceClient = createClient(supabaseUrl, secretKey, { auth: { persistSession: false, autoRefreshToken: false } })
+    const { data: saved, error: updateError } = await serviceClient.from('invitations')
       .update({ status: 'sent', sent_at: new Date().toISOString() })
-      .eq('id', invitation.id).select('id').maybeSingle()
+      .eq('id', invitation.id).eq('event_id', guest.event_id).eq('guest_id', guest.id).select('id').maybeSingle()
     if (updateError || !saved) return json({ error: 'Make confirmó el envío, pero no se guardó el estado. No reenvíes: revisa la invitación en Supabase.' }, 500)
     return json({ ok: true, invitation_url: invitationUrl })
   } catch {

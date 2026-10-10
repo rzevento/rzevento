@@ -24,7 +24,7 @@ export async function getEventMembers() {
   const { data: activeEvent, error: eventError } = await supabase.from('events').select('id').order('created_at', { ascending: false }).limit(1).maybeSingle()
   if (eventError || !activeEvent) return { data: [], error: eventError || new Error('No active event'), demo: false }
   const { data, error } = await supabase.from('event_members').select('user_id, email, display_name, role').eq('event_id', activeEvent.id).order('created_at')
-  const roleLabels: Record<string, string> = { admin: 'Administrador', staff: 'Equipo', viewer: 'Consulta' }
+  const roleLabels: Record<string, string> = { admin: 'Administrador', leader: 'Líder', staff: 'Equipo', viewer: 'Consulta' }
   return { data: (data || []).map(member => ({ userId: member.user_id, email: member.email || 'Sin correo', displayName: member.display_name || 'Usuario sin nombre', role: roleLabels[member.role] || member.role, roleCode: String(member.role) })), error, demo: false }
 }
 
