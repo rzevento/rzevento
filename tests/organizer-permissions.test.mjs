@@ -52,7 +52,8 @@ function render(component, { role = 'staff', profilePending = false, profileErro
     },
     OrganizerRoleContext, useCanManageInvitations, useCanSendInvitations, EventDashboard, ImpersonationControl, getImpersonationId: () => null,
     useQuery({ queryKey }) {
-      if (queryKey[0] === 'event-members') return { data: [{ userId: 'user-1', displayName: 'Administradora', email: 'admin@example.com', role: 'Administrador' }], isLoading: false }
+      if (queryKey[0] === 'event-members') return { data: [{ userId: 'user-1', displayName: 'Administradora', email: 'admin@example.com', role: 'Administrador', roleCode: 'admin' }, { userId: 'user-2', displayName: 'Integrante', email: 'staff@example.com', role: 'Equipo', roleCode: 'staff' }], isLoading: false }
+      if (queryKey[0] === 'configuration-profile') return { data: { userId: 'user-1', roleCode: 'admin' }, isLoading: false }
       return queryKey[0] === 'organizer-profile'
         ? { data: profilePending || profileError ? undefined : { displayName: 'Persona de prueba', role: 'Equipo', roleCode: role, actorIsAdmin: role === 'admin', actorUserId: 'user-1', userId: 'user-1', eventId: 'event-1' }, isPending: profilePending, isError: profileError }
         : { data, isPending: false, isError: false }
@@ -99,7 +100,11 @@ test('only administrator can open configuration or load guests', () => {
   }
   assert.match(render('AdminLayout', { role: 'admin' }), /Configuración/)
   assert.match(render('GuestsPage', { role: 'admin' }), /Cargar masivamente/)
-  assert.match(render('ConfigurationPage', { role: 'admin' }), /Usuarios autorizados/)
+  const adminSettings = render('ConfigurationPage', { role: 'admin' })
+  assert.match(adminSettings, /Usuarios autorizados/)
+  assert.match(adminSettings, /Guardar rol/)
+  assert.match(adminSettings, /Rol de Integrante/)
+  assert.doesNotMatch(adminSettings, /Rol de Administradora/)
 })
 
 test('administrator retains header, bulk, export, import, creation and individual email actions', () => {

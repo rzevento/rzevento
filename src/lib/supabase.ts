@@ -38,6 +38,20 @@ export async function addEventMember(input: { email: string; displayName: string
   })
 }
 
+export async function updateEventMemberRole(userId: string, role: string) {
+  return organizerAction(async () => {
+    if (!supabase) return { data: null, error: null, demo: true }
+    const { data: activeEvent, error: eventError } = await supabase.from('events').select('id').order('created_at', { ascending: false }).limit(1).maybeSingle()
+    if (eventError || !activeEvent) return { data: null, error: eventError || new Error('No active event'), demo: false }
+    const { data, error } = await supabase.rpc('update_event_member_role', {
+      target_event_id: activeEvent.id,
+      target_user_id: userId,
+      new_role: role,
+    })
+    return { data, error, demo: false }
+  })
+}
+
 export async function getCurrentOrganizerProfile() {
   if (!supabase) return { data: { displayName: 'María Ríos', role: 'Administradora', roleCode: 'admin', eventId: 'demo-event', userId: 'demo-user', actorUserId: 'demo-user', actorIsAdmin: true, impersonationId: null, expiresAt: null } as OrganizerProfile, error: null, demo: true }
   const { data, error } = await supabase.rpc('get_organizer_context')
