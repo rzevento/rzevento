@@ -72,7 +72,7 @@ export async function stopOrganizerImpersonation(id: string) {
   if (error) throw error
 }
 
-export async function submitRsvp(input: { token: string; name: string; email: string; phone: string; origin: string }) {
+export async function submitRsvp(input: { token: string; name: string; email: string; phone: string; company: string }) {
   return organizerAction(async () => {
     if (!supabase) return { data: null, error: null, demo: true }
     const { data, error } = await supabase.rpc('submit_rsvp', {
@@ -80,7 +80,7 @@ export async function submitRsvp(input: { token: string; name: string; email: st
       guest_name: input.name,
       guest_email: input.email.trim() || null,
       guest_phone: input.phone.trim() || null,
-      guest_origin: input.origin,
+      guest_origin: input.company,
     })
     return { data, error, demo: false }
   })
@@ -106,19 +106,19 @@ export async function cancelRsvp(token: string) {
   })
 }
 
-export async function createGuest(input: { name: string; email: string; phone: string; origin: string; company: string }) {
+export async function createGuest(input: { name: string; email: string; phone: string; company: string }) {
   return organizerAction(async () => {
     if (!supabase) return { data: null, error: null, demo: true }
     const { data: activeEvent, error: eventError } = await supabase.from('events').select('id').order('created_at', { ascending: false }).limit(1).maybeSingle()
     if (eventError || !activeEvent) return { data: null, error: eventError || new Error('No active event'), demo: false }
-    const { data: guest, error } = await supabase.from('guests').insert({ event_id: activeEvent.id, full_name: input.name.trim() || null, email: input.email.trim() || null, phone: input.phone.trim() || null, origin: input.origin.trim() || null, company: input.company.trim() || null }).select().single()
+    const { data: guest, error } = await supabase.from('guests').insert({ event_id: activeEvent.id, full_name: input.name.trim() || null, email: input.email.trim() || null, phone: input.phone.trim() || null, company: input.company.trim() || null }).select().single()
     if (error || !guest) return { data: null, error, demo: false }
     const invitation = await supabase.from('invitations').insert({ event_id: activeEvent.id, guest_id: guest.id }).select().single()
     return { data: { guest, invitation: invitation.data }, error: invitation.error, demo: false }
   })
 }
 
-export async function updateGuest(guestId: string, input: { name: string; email: string; phone: string; origin: string; company: string }) {
+export async function updateGuest(guestId: string, input: { name: string; email: string; phone: string; company: string }) {
   return organizerAction(async () => {
     if (!input.email.trim() && !input.phone.trim()) return { data: null, error: new Error('Captura un correo o un celular.'), demo: !supabase }
     if (!supabase) return { data: null, error: null, demo: true }
@@ -126,7 +126,6 @@ export async function updateGuest(guestId: string, input: { name: string; email:
       full_name: input.name.trim() || null,
       email: input.email.trim() || null,
       phone: input.phone.trim() || null,
-      origin: input.origin.trim() || null,
       company: input.company.trim() || null,
     }).eq('id', guestId).select('id').single()
     return { data, error: error || (!data ? new Error('No se pudo actualizar al invitado. Revisa tu acceso.') : null), demo: false }
@@ -192,12 +191,12 @@ export async function findGuestByQr(value: string) {
   const token = extractInvitationToken(code)
   const { data, error } = await supabase
     .from('invitations')
-    .select('guest_id, guests(id, full_name, company, email, origin)')
+    .select('guest_id, guests(id, full_name, company, email)')
     .eq('token', token)
     .maybeSingle()
   if (error || !data?.guests) return { data: null, error: error || new Error('Invitación no encontrada'), demo: false }
   const guest = Array.isArray(data.guests) ? data.guests[0] : data.guests
-  return { data: guest ? { id: String(guest.id), name: guest.full_name, company: guest.company || 'Sin empresa', email: guest.email, origin: guest.origin || 'Sin origen' } : null, error: guest ? null : new Error('Invitación no encontrada'), demo: false }
+  return { data: guest ? { id: String(guest.id), name: guest.full_name, company: guest.company || 'Sin empresa', email: guest.email } : null, error: guest ? null : new Error('Invitación no encontrada'), demo: false }
 }
 
 function extractInvitationToken(value: string) {
@@ -212,7 +211,7 @@ function extractInvitationToken(value: string) {
 
 function demoGuestFromQr(value: string) {
   const code = value.trim().replace(/^demo:\/?/, '').replace(/.*\/registro\//, '')
-  const guest = [{ id: 'demo-1', name: 'Mariana González', company: 'Grupo Cobalto', email: 'mariana@gcobalto.com', origin: 'Guadalajara' }, { id: 'demo-2', name: 'Jorge Villaseñor', company: 'Villaseñor Hermanos', email: 'jorge@vhnos.com', origin: 'Ciudad de México' }].find(item => item.id === code || code === 'demo-token')
+  const guest = [{ id: 'demo-1', name: 'Mariana González', company: 'Grupo Cobalto', email: 'mariana@gcobalto.com' }, { id: 'demo-2', name: 'Jorge Villaseñor', company: 'Villaseñor Hermanos', email: 'jorge@vhnos.com' }].find(item => item.id === code || code === 'demo-token')
   return guest || null
 }
 

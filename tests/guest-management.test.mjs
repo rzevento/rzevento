@@ -7,7 +7,7 @@ import ts from 'typescript'
 const source = readFileSync(new URL('../src/lib/supabase.ts', import.meta.url), 'utf8')
 const functions = source.slice(source.indexOf('export async function updateGuest('), source.indexOf('export async function checkInGuest('))
 const compiled = ts.transpileModule(functions, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS } }).outputText
-const input = { name: ' Ana ', email: ' ana@example.com ', phone: ' ', company: ' Empresa ', origin: '' }
+const input = { name: ' Ana ', email: ' ana@example.com ', phone: ' ', company: ' Empresa ' }
 function setup({ missing = false, error = null, demo = false } = {}) {
   const calls = []
   const api = {}
@@ -32,7 +32,7 @@ test('editing only changes contact fields for the requested guest and preserves 
   const { api, calls } = setup()
   const result = await api.updateGuest('guest-1', input)
   assert.equal(result.error, null)
-  assert.deepEqual(JSON.parse(JSON.stringify(calls)), [{ table: 'guests', operation: 'update', values: { full_name: 'Ana', email: 'ana@example.com', phone: null, company: 'Empresa', origin: null }, filter: { key: 'id', value: 'guest-1' } }])
+  assert.deepEqual(JSON.parse(JSON.stringify(calls)), [{ table: 'guests', operation: 'update', values: { full_name: 'Ana', email: 'ana@example.com', phone: null, company: 'Empresa' }, filter: { key: 'id', value: 'guest-1' } }])
 })
 test('editing refuses to remove both contact methods without touching the database', async () => {
   const { api, calls } = setup()

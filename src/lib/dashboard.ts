@@ -1,5 +1,5 @@
 export type GuestStatus = 'Confirmado' | 'Pendiente' | 'Canceló'
-export type Guest = { id: string; name: string; company: string; email: string; phone: string; origin: string; invite: string; status: GuestStatus; checkedIn: boolean; confirmedAt?: string | null; whatsappSentAt?: string | null; invitationToken?: string | null }
+export type Guest = { id: string; name: string; company: string; email: string; phone: string; invite: string; status: GuestStatus; checkedIn: boolean; confirmedAt?: string | null; whatsappSentAt?: string | null; invitationToken?: string | null }
 export const normalize = (value: string) => value.trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').toLowerCase()
 export function summarize(guests: Guest[]) {
   return { total: guests.length, confirmed: guests.filter(g => g.status === 'Confirmado').length,
@@ -7,8 +7,8 @@ export function summarize(guests: Guest[]) {
     arrived: guests.filter(g => g.checkedIn).length, expected: guests.filter(g => g.status === 'Confirmado' && !g.checkedIn).length }
 }
 export function dashboardCsv(guests: Guest[]) {
-  const rows = [['Invitado', 'Empresa', 'Origen', 'Correo', 'Celular', 'Invitación', 'Respuesta', 'Llegada'],
-    ...guests.map(g => [g.name, g.company, g.origin, g.email, g.phone, g.invite, g.status, g.checkedIn ? 'Presente' : 'Sin llegada'])]
+  const rows = [['Invitado', 'Empresa', 'Correo', 'Celular', 'Invitación', 'Respuesta', 'Llegada'],
+    ...guests.map(g => [g.name, g.company, g.email, g.phone, g.invite, g.status, g.checkedIn ? 'Presente' : 'Sin llegada'])]
   return '\uFEFF' + rows.map(row => row.map(value => {
     const safe = /^[\s]*[=+@-]/.test(value) || /^[\t\r\n]/.test(value) ? `'${value}` : value
     return `"${safe.replaceAll('"', '""')}"`

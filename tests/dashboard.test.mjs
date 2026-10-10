@@ -5,7 +5,7 @@ import ts from 'typescript'
 const source = readFileSync(new URL('../src/lib/dashboard.ts', import.meta.url), 'utf8')
 const js = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText
 const { summarize, normalize, dashboardCsv, confirmationDay, dailyConfirmations } = await import(`data:text/javascript;base64,${Buffer.from(js).toString('base64')}`)
-const base = { name: 'Persona', company: 'Empresa', origin: 'Guadalajara', email: '', phone: '', invite: 'Enviada', status: 'Pendiente', checkedIn: false }
+const base = { name: 'Persona', company: 'Empresa', email: '', phone: '', invite: 'Enviada', status: 'Pendiente', checkedIn: false }
 const guests = [
   { ...base, id: '1', status: 'Confirmado' },
   { ...base, id: '2', status: 'Confirmado', checkedIn: true },
@@ -31,6 +31,7 @@ test('CSV exports only supplied rows and protects formula-like values', () => {
   assert.ok(csv.includes('"\'=SUM(A1)"'))
   assert.ok(csv.includes('"Uno, ""Dos"""'))
   assert.ok(csv.includes('"\'+523312345678"'))
+  assert.equal(csv.split('\r\n')[0].includes('Origen'), false)
   assert.ok(!csv.includes('Por revisar'))
 })
 

@@ -68,11 +68,11 @@ async function downloadGuestPass(name: string, accessToken: string) {
 }
 
 const demoGuests: Guest[] = [
-  { id: 'demo-1', name: 'Mariana González', company: 'Grupo Cobalto', email: 'mariana@gcobalto.com', phone: '3312345678', origin: 'Guadalajara', invite: 'Enviada', status: 'Confirmado', checkedIn: true },
-  { id: 'demo-2', name: 'Jorge Villaseñor', company: 'Villaseñor Hermanos', email: 'jorge@vhnos.com', phone: '5551234567', origin: 'Ciudad de México', invite: 'Enviada', status: 'Confirmado', checkedIn: false },
-  { id: 'demo-3', name: 'Lucía de la Torre', company: 'LDT Capital', email: 'lucia@ldtcapital.com', phone: '', origin: 'Monterrey', invite: 'Enviada', status: 'Pendiente', checkedIn: false },
-  { id: 'demo-4', name: 'Raúl Navarro', company: 'Navarro & Asociados', email: 'raul@navarro.com', phone: '', origin: 'Guadalajara', invite: 'Enviada', status: 'Canceló', checkedIn: false },
-  { id: 'demo-5', name: 'Elena Ríos', company: 'Ríos Industrial', email: '', phone: '8112345678', origin: 'Querétaro', invite: 'Enviada', status: 'Confirmado', checkedIn: false },
+  { id: 'demo-1', name: 'Mariana González', company: 'Grupo Cobalto', email: 'mariana@gcobalto.com', phone: '3312345678', invite: 'Enviada', status: 'Confirmado', checkedIn: true },
+  { id: 'demo-2', name: 'Jorge Villaseñor', company: 'Villaseñor Hermanos', email: 'jorge@vhnos.com', phone: '5551234567', invite: 'Enviada', status: 'Confirmado', checkedIn: false },
+  { id: 'demo-3', name: 'Lucía de la Torre', company: 'LDT Capital', email: 'lucia@ldtcapital.com', phone: '', invite: 'Enviada', status: 'Pendiente', checkedIn: false },
+  { id: 'demo-4', name: 'Raúl Navarro', company: 'Navarro & Asociados', email: 'raul@navarro.com', phone: '', invite: 'Enviada', status: 'Canceló', checkedIn: false },
+  { id: 'demo-5', name: 'Elena Ríos', company: 'Ríos Industrial', email: '', phone: '8112345678', invite: 'Enviada', status: 'Confirmado', checkedIn: false },
 ]
 
 const supabaseConfig = { url: import.meta.env.VITE_SUPABASE_URL, key: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY }
@@ -85,7 +85,7 @@ const guestQuery = async (): Promise<Guest[]> => {
   const guests: Guest[] = []
   const pageSize = 500
   for (let offset = 0; ; offset += pageSize) {
-    const { data, error } = await supabase.from('guests').select('id, full_name, company, email, phone, origin, invitations(*), rsvps(status, submitted_at), check_ins(id)').eq('event_id', activeEvent.id).order('created_at', { ascending: false }).order('id').range(offset, offset + pageSize - 1)
+    const { data, error } = await supabase.from('guests').select('id, full_name, company, email, phone, invitations(*), rsvps(status, submitted_at), check_ins(id)').eq('event_id', activeEvent.id).order('created_at', { ascending: false }).order('id').range(offset, offset + pageSize - 1)
     if (error) throw error
     if (!data) throw new Error('No se pudo consultar la lista de invitados')
     guests.push(...data.map((guest) => {
@@ -93,7 +93,7 @@ const guestQuery = async (): Promise<Guest[]> => {
       const rsvp = Array.isArray(guest.rsvps) ? guest.rsvps[0] : guest.rsvps
       const checkIn = Array.isArray(guest.check_ins) ? guest.check_ins[0] : guest.check_ins
       const status: GuestStatus = rsvp?.status === 'confirmed' ? 'Confirmado' : rsvp?.status === 'cancelled' || rsvp?.status === 'declined' ? 'Canceló' : 'Pendiente'
-      return { id: String(guest.id), name: guest.full_name || 'Invitado pendiente', company: guest.company || 'Sin empresa', email: guest.email || '', phone: guest.phone || '', origin: guest.origin || 'Sin origen', invite: invitation?.sent_at || invitation?.status === 'sent' ? 'Enviada' : 'Pendiente', whatsappSentAt: invitation?.whatsapp_sent_at || null, invitationToken: invitation?.token || null, status, checkedIn: Boolean(checkIn), confirmedAt: rsvp?.submitted_at || null }
+      return { id: String(guest.id), name: guest.full_name || 'Invitado pendiente', company: guest.company || 'Sin empresa', email: guest.email || '', phone: guest.phone || '', invite: invitation?.sent_at || invitation?.status === 'sent' ? 'Enviada' : 'Pendiente', whatsappSentAt: invitation?.whatsapp_sent_at || null, invitationToken: invitation?.token || null, status, checkedIn: Boolean(checkIn), confirmedAt: rsvp?.submitted_at || null }
     }))
     if (data.length < pageSize) break
   }
@@ -137,7 +137,7 @@ function RegistrationPage({ token = 'demo' }: { token?: string }) {
   const [alreadyRegistered, setAlreadyRegistered] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
-  const [form, setForm] = useState({ name: '', email: '', phone: '', origin: '' })
+  const [form, setForm] = useState({ name: '', email: '', phone: '', company: '' })
   const [prefillStatus, setPrefillStatus] = useState<'loading' | 'ready' | 'error'>(directToken ? 'loading' : 'ready')
   const [loadAttempt, setLoadAttempt] = useState(0)
   useEffect(() => {
@@ -153,7 +153,7 @@ function RegistrationPage({ token = 'demo' }: { token?: string }) {
         setPrefillStatus('error')
         return
       }
-      setForm({ name: result.data.name || '', email: result.data.email || '', phone: result.data.phone || '', origin: result.data.company || '' })
+      setForm({ name: result.data.name || '', email: result.data.email || '', phone: result.data.phone || '', company: result.data.company || '' })
       setPrefillStatus('ready')
     }).catch(() => {
       if (!active) return
@@ -188,7 +188,7 @@ function RegistrationPage({ token = 'demo' }: { token?: string }) {
       currentToken = lookup.data?.token || ''
       setResolvedToken(currentToken)
     }
-    if (!form.name.trim() || !form.origin.trim()) {
+    if (!form.name.trim() || !form.company.trim()) {
       setSubmitting(false)
       setError('Para completar el registro necesitamos tu nombre y empresa.')
       return
@@ -239,7 +239,7 @@ function RegistrationPage({ token = 'demo' }: { token?: string }) {
     pdf.text(pdf.splitTextToSize('Esta entrada es personal e intransferible. También llegará por correo. No es necesario imprimirla; puedes mostrarla desde tu celular.', 82), 100, 187, { lineHeightFactor: 1.55 })
     pdf.save('entrada-personal-rz-eventos.pdf')
   }
-  return <main className="register-page"><section className="register-intro"><div className="circle circle-one"></div><div className="circle circle-two"></div><Logo /><p className="eyebrow">{event.eyebrow}</p><h1>{event.title} <span>{event.accent}</span></h1><div className="line"></div><p className="intro-copy">Una conversación para quienes construyen empresas que trascienden generaciones.</p><div className="event-meta"><div><CalendarDays size={19} /><span>{event.date}<small>{event.time}</small></span></div><div><MapPin size={19} /><span>{event.venue}<small>{event.city}</small></span></div></div></section><section className="register-card"><div className="card-top"><p className="eyebrow">Evento exclusivo por invitación</p><h2>Confirma tu asistencia</h2><div className="invitation-notices"><p><ShieldCheck size={15} /> {directToken ? 'Revisa tus datos y completa lo que falte.' : 'Ingresa el correo o celular con el que fuiste invitado.'}</p><p><LockKeyhole size={15} /> Esta invitación es personal e intransferible.</p></div><p>Completa tus datos para reservar tu lugar.</p></div><form onSubmit={handleSubmit} aria-busy={prefillStatus === 'loading'}>{prefillStatus === 'loading' && <p role="status">Cargando tus datos…</p>}<label>Nombre completo<input disabled={prefillStatus !== 'ready' || submitting} value={form.name} onChange={update('name')} placeholder="Tu nombre" /></label><label>Correo electrónico<input type="email" disabled={prefillStatus !== 'ready' || submitting} value={form.email} onChange={update('email')} placeholder="nombre@empresa.com" /></label><label>Celular<input type="tel" disabled={prefillStatus !== 'ready' || submitting} value={form.phone} onChange={update('phone')} placeholder="México: 10 dígitos · Otros: +código de país" /></label><label>Empresa<input disabled={prefillStatus !== 'ready' || submitting} value={form.origin} onChange={update('origin')} placeholder="Nombre de la empresa" /></label>{error && <p className="form-error" role="alert">{error}</p>}{prefillStatus === 'error' && <button className="outline-button" type="button" onClick={() => setLoadAttempt(attempt => attempt + 1)}>Volver a cargar</button>}<button className="button button-orange" type="submit" disabled={submitting || prefillStatus !== 'ready'}>{submitting ? 'Guardando…' : 'Confirmar asistencia'} {!submitting && <ArrowRight size={17} />}</button></form><p className="privacy-note"><ShieldCheck size={15} /> Tus datos se utilizarán únicamente para la organización del evento.</p></section></main>
+  return <main className="register-page"><section className="register-intro"><div className="circle circle-one"></div><div className="circle circle-two"></div><Logo /><p className="eyebrow">{event.eyebrow}</p><h1>{event.title} <span>{event.accent}</span></h1><div className="line"></div><p className="intro-copy">Una conversación para quienes construyen empresas que trascienden generaciones.</p><div className="event-meta"><div><CalendarDays size={19} /><span>{event.date}<small>{event.time}</small></span></div><div><MapPin size={19} /><span>{event.venue}<small>{event.city}</small></span></div></div></section><section className="register-card"><div className="card-top"><p className="eyebrow">Evento exclusivo por invitación</p><h2>Confirma tu asistencia</h2><div className="invitation-notices"><p><ShieldCheck size={15} /> {directToken ? 'Revisa tus datos y completa lo que falte.' : 'Ingresa el correo o celular con el que fuiste invitado.'}</p><p><LockKeyhole size={15} /> Esta invitación es personal e intransferible.</p></div><p>Completa tus datos para reservar tu lugar.</p></div><form onSubmit={handleSubmit} aria-busy={prefillStatus === 'loading'}>{prefillStatus === 'loading' && <p role="status">Cargando tus datos…</p>}<label>Nombre completo<input disabled={prefillStatus !== 'ready' || submitting} value={form.name} onChange={update('name')} placeholder="Tu nombre" /></label><label>Correo electrónico<input type="email" disabled={prefillStatus !== 'ready' || submitting} value={form.email} onChange={update('email')} placeholder="nombre@empresa.com" /></label><label>Celular<input type="tel" disabled={prefillStatus !== 'ready' || submitting} value={form.phone} onChange={update('phone')} placeholder="México: 10 dígitos · Otros: +código de país" /></label><label>Empresa<input disabled={prefillStatus !== 'ready' || submitting} value={form.company} onChange={update('company')} placeholder="Nombre de la empresa" /></label>{error && <p className="form-error" role="alert">{error}</p>}{prefillStatus === 'error' && <button className="outline-button" type="button" onClick={() => setLoadAttempt(attempt => attempt + 1)}>Volver a cargar</button>}<button className="button button-orange" type="submit" disabled={submitting || prefillStatus !== 'ready'}>{submitting ? 'Guardando…' : 'Confirmar asistencia'} {!submitting && <ArrowRight size={17} />}</button></form><p className="privacy-note"><ShieldCheck size={15} /> Tus datos se utilizarán únicamente para la organización del evento.</p></section></main>
 }
 
 function TokenRegistrationPage() {
@@ -460,7 +460,6 @@ function GuestFormModal({ guest, onClose }: { guest?: Guest; onClose: () => void
   const [form, setForm] = useState({
     name: guest?.name === 'Invitado pendiente' ? '' : guest?.name || '',
     email: guest?.email || '', phone: guest?.phone || '',
-    origin: guest?.origin === 'Sin origen' ? '' : guest?.origin || '',
     company: guest?.company === 'Sin empresa' ? '' : guest?.company || '',
   })
   const [saving, setSaving] = useState(false)
@@ -480,7 +479,7 @@ function GuestFormModal({ guest, onClose }: { guest?: Guest; onClose: () => void
       const result = guest ? await updateGuest(guest.id, form) : await createGuest(form)
       if (result.error) throw result.error
       await queryClient.cancelQueries({ queryKey: ['guests'] })
-      const changes = { name: form.name.trim() || 'Invitado pendiente', company: form.company.trim() || 'Sin empresa', email: form.email.trim(), phone: form.phone.trim(), origin: form.origin.trim() || 'Sin origen' }
+      const changes = { name: form.name.trim() || 'Invitado pendiente', company: form.company.trim() || 'Sin empresa', email: form.email.trim(), phone: form.phone.trim() }
       if (guest) queryClient.setQueryData<Guest[]>(['guests'], current => (current || demoGuests).map(item => item.id === guest.id ? { ...item, ...changes } : item))
       else if (result.demo) queryClient.setQueryData<Guest[]>(['guests'], current => [...(current || demoGuests), { id: `demo-${crypto.randomUUID()}`, ...changes, invite: 'Pendiente', status: 'Pendiente', checkedIn: false }])
       if (!result.demo) await queryClient.invalidateQueries({ queryKey: ['guests'] })
@@ -501,7 +500,6 @@ function GuestFormModal({ guest, onClose }: { guest?: Guest; onClose: () => void
       <label>Correo electrónico <small>(opcional si registras celular)</small><input type="email" disabled={saving} value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} placeholder="nombre@empresa.com" /></label>
       <label>Celular <small>(opcional si registras correo)</small><input type="tel" disabled={saving} value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} placeholder="México: 10 dígitos · Otros: +código de país" /></label>
       <label>Empresa<input disabled={saving} value={form.company} onChange={e => setForm({ ...form, company: e.target.value })} /></label>
-      <label>Procedencia<input disabled={saving} value={form.origin} onChange={e => setForm({ ...form, origin: e.target.value })} /></label>
       {error && <p className="form-error" role="alert">{error}</p>}
       <button className="button button-orange" disabled={saving}>{saving ? 'Guardando…' : guest ? 'Guardar cambios' : 'Crear invitación'} <ArrowRight size={16} /></button>
     </form>
@@ -692,14 +690,13 @@ function GuestsPage() {
       const nameIndex = indexOf('name', 'nombre', 'nombre completo')
       const emailIndex = indexOf('email', 'correo', 'correo electrónico')
       const phoneIndex = indexOf('phone', 'teléfono', 'telefono', 'celular', 'movil')
-      const originIndex = indexOf('origin', 'procedencia', 'ciudad', 'de dónde vienes')
       const companyIndex = indexOf('company', 'empresa')
       if (nameIndex < 0 || (emailIndex < 0 && phoneIndex < 0)) {
         window.alert('El archivo debe incluir una columna Nombre y una columna Correo o Celular.')
         e.target.value = ''
         return
       }
-      const imported = rows.filter(row => (emailIndex >= 0 && row[emailIndex]) || (phoneIndex >= 0 && row[phoneIndex])).map(row => ({ id: `csv-${crypto.randomUUID()}`, name: nameIndex >= 0 ? row[nameIndex] : '', email: emailIndex >= 0 ? row[emailIndex] : '', phone: phoneIndex >= 0 ? row[phoneIndex] : '', origin: originIndex >= 0 ? row[originIndex] : 'Sin origen', company: companyIndex >= 0 ? row[companyIndex] : 'Sin empresa', invite: 'Pendiente', status: 'Pendiente' as GuestStatus, checkedIn: false }))
+      const imported = rows.filter(row => (emailIndex >= 0 && row[emailIndex]) || (phoneIndex >= 0 && row[phoneIndex])).map(row => ({ id: `csv-${crypto.randomUUID()}`, name: nameIndex >= 0 ? row[nameIndex] : '', email: emailIndex >= 0 ? row[emailIndex] : '', phone: phoneIndex >= 0 ? row[phoneIndex] : '', company: companyIndex >= 0 ? row[companyIndex] : 'Sin empresa', invite: 'Pendiente', status: 'Pendiente' as GuestStatus, checkedIn: false }))
       const normalizeEmail = (value: string) => value.trim().toLowerCase()
       const normalizePhone = (value: string) => value.replace(/\D/g, '')
       const existingEmails = new Set(data.map(guest => normalizeEmail(guest.email)).filter(Boolean))
@@ -718,7 +715,7 @@ function GuestsPage() {
       if (imported.length === 0) window.alert('No encontré filas válidas. Cada invitado necesita nombre y correo o celular.')
       else if (newImported.length === 0) window.alert('Todos los contactos de este archivo ya están registrados.')
       else if (supabase) {
-        const results = await Promise.all(newImported.map(guest => createGuest({ name: guest.name, email: guest.email, phone: guest.phone, origin: guest.origin, company: guest.company })))
+        const results = await Promise.all(newImported.map(guest => createGuest({ name: guest.name, email: guest.email, phone: guest.phone, company: guest.company })))
         const failed = results.filter(result => result.error)
         if (failed.length) window.alert(`${failed.length} fila(s) no pudieron guardarse. ${skipped ? `${skipped} duplicada(s) fueron omitidas. ` : ''}${failed[0].error?.message || ''}`)
         else if (skipped) window.alert(`${newImported.length} invitación(es) cargadas. ${skipped} contacto(s) duplicado(s) fueron omitidos.`)
@@ -793,7 +790,7 @@ function CheckInPage() {
       }
     })
   }
-  return <section className="checkin-page"><div className="checkin-intro"><p className="eyebrow orange">Registro en evento</p><h2>Bienvenidos</h2><p className="muted">Busca a la persona invitada o escanea su código QR para registrar su llegada.</p></div><div className="checkin-tools"><div className="checkin-search"><Search size={24} /><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Escribe un nombre, correo o empresa..." /></div><button className="button button-orange scan-button" disabled={scanPending || checking !== null} onClick={() => { setScannerError(''); setScanNotice(''); setScanCode(''); setScannerOpen(true) }}><QrCode size={19} /> {scannerError ? 'Volver a escanear QR' : 'Escanear QR'}</button></div>{scanPending && <p className="checkin-feedback" role="status">Validando invitación…</p>}{scanNotice && <p className="checkin-feedback checkin-success" role="status">{scanNotice}</p>}{scannerError && <p className="form-error checkin-feedback" role="alert">{scannerError}</p>}{attendanceError && !scannerError && <p className="form-error" role="alert">{attendanceError}</p>}{matches.length > 0 && <div className="checkin-results">{matches.map(g => <div className="checkin-result" key={g.id}><div className="table-avatar">{g.name.split(' ').map(n => n[0]).slice(0, 2).join('')}</div><div className="guest-name"><strong>{g.name}</strong><small>{g.company} · {g.origin}</small></div>{g.checkedIn ? <div className="attendance-actions"><span className="present"><CheckCircle2 size={17} /> Presente</span><button className="row-action" disabled={scanPending || checking !== null} onClick={() => void check(g.id, false)}>{checking === g.id ? 'Guardando…' : 'Marcar como no ha llegado'}</button></div> : <button className="button button-orange small" disabled={scanPending || checking !== null} onClick={() => void check(g.id)}>{checking === g.id ? 'Guardando…' : 'Registrar entrada'}</button>}</div>)}</div>}<div className="checkin-event-card"><div className="event-date-block"><strong>17</strong><span>NOV<br />2026</span></div><div><p className="eyebrow">Evento de hoy</p><h3>{event.title} <span>{event.accent}</span></h3><p className="muted"><MapPin size={15} /> {event.venue} · {event.city}</p></div><div className="checkin-count"><strong>{checked.length}</strong><span>registrados</span></div></div>{scannerOpen && <QrScanner onClose={() => setScannerOpen(false)} onCode={resolveQr} code={scanCode} setCode={setScanCode} />}</section>
+  return <section className="checkin-page"><div className="checkin-intro"><p className="eyebrow orange">Registro en evento</p><h2>Bienvenidos</h2><p className="muted">Busca a la persona invitada o escanea su código QR para registrar su llegada.</p></div><div className="checkin-tools"><div className="checkin-search"><Search size={24} /><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Escribe un nombre, correo o empresa..." /></div><button className="button button-orange scan-button" disabled={scanPending || checking !== null} onClick={() => { setScannerError(''); setScanNotice(''); setScanCode(''); setScannerOpen(true) }}><QrCode size={19} /> {scannerError ? 'Volver a escanear QR' : 'Escanear QR'}</button></div>{scanPending && <p className="checkin-feedback" role="status">Validando invitación…</p>}{scanNotice && <p className="checkin-feedback checkin-success" role="status">{scanNotice}</p>}{scannerError && <p className="form-error checkin-feedback" role="alert">{scannerError}</p>}{attendanceError && !scannerError && <p className="form-error" role="alert">{attendanceError}</p>}{matches.length > 0 && <div className="checkin-results">{matches.map(g => <div className="checkin-result" key={g.id}><div className="table-avatar">{g.name.split(' ').map(n => n[0]).slice(0, 2).join('')}</div><div className="guest-name"><strong>{g.name}</strong><small>{g.company}</small></div>{g.checkedIn ? <div className="attendance-actions"><span className="present"><CheckCircle2 size={17} /> Presente</span><button className="row-action" disabled={scanPending || checking !== null} onClick={() => void check(g.id, false)}>{checking === g.id ? 'Guardando…' : 'Marcar como no ha llegado'}</button></div> : <button className="button button-orange small" disabled={scanPending || checking !== null} onClick={() => void check(g.id)}>{checking === g.id ? 'Guardando…' : 'Registrar entrada'}</button>}</div>)}</div>}<div className="checkin-event-card"><div className="event-date-block"><strong>17</strong><span>NOV<br />2026</span></div><div><p className="eyebrow">Evento de hoy</p><h3>{event.title} <span>{event.accent}</span></h3><p className="muted"><MapPin size={15} /> {event.venue} · {event.city}</p></div><div className="checkin-count"><strong>{checked.length}</strong><span>registrados</span></div></div>{scannerOpen && <QrScanner onClose={() => setScannerOpen(false)} onCode={resolveQr} code={scanCode} setCode={setScanCode} />}</section>
 }
 
 function ConfigurationPage() {
