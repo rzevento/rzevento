@@ -1,10 +1,15 @@
 export type GuestStatus = 'Confirmado' | 'Pendiente' | 'Canceló'
-export type Guest = { id: string; name: string; company: string; email: string; phone: string; invite: string; status: GuestStatus; checkedIn: boolean; confirmedAt?: string | null; whatsappSentAt?: string | null; invitationToken?: string | null }
+export type Guest = { id: string; name: string; company: string; email: string; phone: string; invite: string; status: GuestStatus; checkedIn: boolean; checkedInAt?: string | null; confirmedAt?: string | null; whatsappSentAt?: string | null; invitationToken?: string | null }
 export const normalize = (value: string) => value.trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').toLowerCase()
 export function summarize(guests: Guest[]) {
   return { total: guests.length, confirmed: guests.filter(g => g.status === 'Confirmado').length,
     pending: guests.filter(g => g.status === 'Pendiente').length, cancelled: guests.filter(g => g.status === 'Canceló').length,
     arrived: guests.filter(g => g.checkedIn).length, expected: guests.filter(g => g.status === 'Confirmado' && !g.checkedIn).length }
+}
+export function arrivedGuests(guests: Guest[]) {
+  return guests.filter(guest => guest.checkedIn).sort((a, b) =>
+    (b.checkedInAt || '').localeCompare(a.checkedInAt || '')
+    || a.name.localeCompare(b.name, 'es', { sensitivity: 'base' }))
 }
 export function dashboardCsv(guests: Guest[]) {
   const rows = [['Invitado', 'Empresa', 'Correo', 'Celular', 'Invitación', 'Respuesta', 'Llegada'],

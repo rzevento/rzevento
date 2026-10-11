@@ -235,6 +235,24 @@ body { background: var(--bg); color: var(--cream); }
 .manual-code input { min-width: 0; }
 .checkin-feedback { padding: 14px 16px; margin: 16px 0; background: #faf8f5; border: 1px solid #e6dfd7; font-size: 14px; line-height: 1.5; }
 .checkin-success { color: #316446; }
+.arrivals-panel { margin-top: 18px; background: #fffdf9; border: 1px solid #e0d8ce; }
+.arrivals-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 25px 30px 20px; }
+.arrivals-heading .eyebrow { margin-bottom: 9px; }
+.arrivals-heading h3 { margin: 0; font: 800 21px/1.2 'Manrope'; letter-spacing: -.04em; }
+.arrivals-heading > span { flex: none; color: var(--orange-dark); font: 800 24px/1 'Manrope'; }
+.arrivals-list { list-style: none; margin: 0; padding: 0; }
+.arrivals-list li { display: flex; align-items: center; gap: 13px; min-width: 0; padding: 15px 30px; border-top: 1px solid #eee8e0; }
+.arrivals-list li > div { flex: 1; min-width: 0; }
+.arrivals-list strong, .arrivals-list small { display: block; overflow-wrap: anywhere; }
+.arrivals-list strong { font-size: 14px; }
+.arrivals-list small { margin-top: 4px; color: #81786e; font-size: 12px; }
+.arrivals-list li > svg { flex: none; color: #42815e; }
+.arrivals-empty { margin: 0; padding: 0 30px 25px; color: #81786e; font-size: 13px; }
+@media (max-width: 680px) {
+  .arrivals-heading { padding: 22px 20px 18px; }
+  .arrivals-list li { padding: 14px 20px; }
+  .arrivals-empty { padding: 0 20px 22px; }
+}
 @media (max-width: 680px) {
   /* Avoid Safari's automatic input zoom while preserving user pinch zoom. */
   input, select, textarea, .checkin-search input, .filter-button select { font-size: 16px; }

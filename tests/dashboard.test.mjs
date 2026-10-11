@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs'
 import ts from 'typescript'
 const source = readFileSync(new URL('../src/lib/dashboard.ts', import.meta.url), 'utf8')
 const js = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText
-const { summarize, normalize, dashboardCsv, confirmationDay, dailyConfirmations } = await import(`data:text/javascript;base64,${Buffer.from(js).toString('base64')}`)
+const { summarize, arrivedGuests, normalize, dashboardCsv, confirmationDay, dailyConfirmations } = await import(`data:text/javascript;base64,${Buffer.from(js).toString('base64')}`)
 const base = { name: 'Persona', company: 'Empresa', email: '', phone: '', invite: 'Enviada', status: 'Pendiente', checkedIn: false }
 const guests = [
   { ...base, id: '1', status: 'Confirmado' },
@@ -20,6 +20,15 @@ test('responses reconcile and arrivals do not imply confirmation', () => {
 })
 test('empty events have zero totals', () => {
   assert.deepEqual(summarize([]), { total: 0, confirmed: 0, pending: 0, cancelled: 0, arrived: 0, expected: 0 })
+})
+test('arrival list includes only checked-in guests, newest first, without changing the guest list', () => {
+  const rows = [
+    { ...base, id: 'early', checkedIn: true, checkedInAt: '2026-11-17T14:30:00Z' },
+    { ...base, id: 'pending', checkedIn: false },
+    { ...base, id: 'recent', checkedIn: true, checkedInAt: '2026-11-17T15:00:00Z' },
+  ]
+  assert.deepEqual(arrivedGuests(rows).map(guest => guest.id), ['recent', 'early'])
+  assert.deepEqual(rows.map(guest => guest.id), ['early', 'pending', 'recent'])
 })
 test('search normalization ignores accents, case and repeated spaces', () => {
   assert.equal(normalize('  JOSÉ   Pérez '), 'jose perez')

@@ -13,6 +13,7 @@ import ImpersonationControl from './components/ImpersonationControl'
 import { beginIdentityChange, finishIdentityChange, cancelIdentityChange, resetImpersonation, getImpersonationId, organizerAction } from './lib/impersonation-transport'
 import { startOrganizerImpersonation, stopOrganizerImpersonation } from './lib/supabase'
 import EventDashboard from './components/EventDashboard'
+import { arrivedGuests } from './lib/dashboard'
 import type { Guest, GuestStatus } from './lib/dashboard'
 import './styles.css'
 
@@ -85,7 +86,7 @@ const guestQuery = async (): Promise<Guest[]> => {
   const guests: Guest[] = []
   const pageSize = 500
   for (let offset = 0; ; offset += pageSize) {
-    const { data, error } = await supabase.from('guests').select('id, full_name, company, email, phone, invitations(*), rsvps(status, submitted_at), check_ins(id)').eq('event_id', activeEvent.id).order('created_at', { ascending: false }).order('id').range(offset, offset + pageSize - 1)
+    const { data, error } = await supabase.from('guests').select('id, full_name, company, email, phone, invitations(*), rsvps(status, submitted_at), check_ins(id, checked_in_at)').eq('event_id', activeEvent.id).order('created_at', { ascending: false }).order('id').range(offset, offset + pageSize - 1)
     if (error) throw error
     if (!data) throw new Error('No se pudo consultar la lista de invitados')
     guests.push(...data.map((guest) => {
@@ -93,7 +94,7 @@ const guestQuery = async (): Promise<Guest[]> => {
       const rsvp = Array.isArray(guest.rsvps) ? guest.rsvps[0] : guest.rsvps
       const checkIn = Array.isArray(guest.check_ins) ? guest.check_ins[0] : guest.check_ins
       const status: GuestStatus = rsvp?.status === 'confirmed' ? 'Confirmado' : rsvp?.status === 'cancelled' || rsvp?.status === 'declined' ? 'Canceló' : 'Pendiente'
-      return { id: String(guest.id), name: guest.full_name || 'Invitado pendiente', company: guest.company || 'Sin empresa', email: guest.email || '', phone: guest.phone || '', invite: invitation?.sent_at || invitation?.status === 'sent' ? 'Enviada' : 'Pendiente', whatsappSentAt: invitation?.whatsapp_sent_at || null, invitationToken: invitation?.token || null, status, checkedIn: Boolean(checkIn), confirmedAt: rsvp?.submitted_at || null }
+      return { id: String(guest.id), name: guest.full_name || 'Invitado pendiente', company: guest.company || 'Sin empresa', email: guest.email || '', phone: guest.phone || '', invite: invitation?.sent_at || invitation?.status === 'sent' ? 'Enviada' : 'Pendiente', whatsappSentAt: invitation?.whatsapp_sent_at || null, invitationToken: invitation?.token || null, status, checkedIn: Boolean(checkIn), checkedInAt: checkIn?.checked_in_at || null, confirmedAt: rsvp?.submitted_at || null }
     }))
     if (data.length < pageSize) break
   }
@@ -105,7 +106,7 @@ async function saveAttendance(id: string, present: boolean) {
     await queryClient.cancelQueries({ queryKey: ['guests'] })
     const result = await (present ? checkInGuest(id) : undoCheckInGuest(id))
     if (result.error) throw result.error
-    queryClient.setQueryData<Guest[]>(['guests'], current => (current || demoGuests).map(guest => guest.id === id ? { ...guest, checkedIn: present } : guest))
+    queryClient.setQueryData<Guest[]>(['guests'], current => (current || demoGuests).map(guest => guest.id === id ? { ...guest, checkedIn: present, checkedInAt: present ? new Date().toISOString() : null } : guest))
     if (!result.demo) await queryClient.invalidateQueries({ queryKey: ['guests'] })
   })
   if (result && 'error' in result) throw result.error
@@ -738,9 +739,11 @@ function CheckInPage() {
   const [scanPending, setScanPending] = useState(false)
   const [scanNotice, setScanNotice] = useState('')
   const scanInFlightRef = useRef(false)
-  const { data = demoGuests } = useQuery({ queryKey: ['guests'], queryFn: guestQuery })
+  const { data: queriedGuests, isPending, isError } = useQuery({ queryKey: ['guests'], queryFn: guestQuery, refetchInterval: supabase ? 10_000 : false })
+  const data = queriedGuests ?? (supabase ? [] : demoGuests)
   const matches = search.length > 1 ? data.filter(g => `${g.name} ${g.email} ${g.phone} ${g.company}`.toLowerCase().includes(search.toLowerCase())) : []
-  const checked = data.filter(guest => guest.checkedIn).map(guest => guest.id)
+  const arrivals = arrivedGuests(data)
+  const checked = arrivals.map(guest => guest.id)
   async function check(id: string, present = true) {
     setAttendanceError('')
     setChecking(id)
@@ -790,7 +793,7 @@ function CheckInPage() {
       }
     })
   }
-  return <section className="checkin-page"><div className="checkin-intro"><p className="eyebrow orange">Registro en evento</p><h2>Bienvenidos</h2><p className="muted">Busca a la persona invitada o escanea su código QR para registrar su llegada.</p></div><div className="checkin-tools"><div className="checkin-search"><Search size={24} /><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Escribe un nombre, correo o empresa..." /></div><button className="button button-orange scan-button" disabled={scanPending || checking !== null} onClick={() => { setScannerError(''); setScanNotice(''); setScanCode(''); setScannerOpen(true) }}><QrCode size={19} /> {scannerError ? 'Volver a escanear QR' : 'Escanear QR'}</button></div>{scanPending && <p className="checkin-feedback" role="status">Validando invitación…</p>}{scanNotice && <p className="checkin-feedback checkin-success" role="status">{scanNotice}</p>}{scannerError && <p className="form-error checkin-feedback" role="alert">{scannerError}</p>}{attendanceError && !scannerError && <p className="form-error" role="alert">{attendanceError}</p>}{matches.length > 0 && <div className="checkin-results">{matches.map(g => <div className="checkin-result" key={g.id}><div className="table-avatar">{g.name.split(' ').map(n => n[0]).slice(0, 2).join('')}</div><div className="guest-name"><strong>{g.name}</strong><small>{g.company}</small></div>{g.checkedIn ? <div className="attendance-actions"><span className="present"><CheckCircle2 size={17} /> Presente</span><button className="row-action" disabled={scanPending || checking !== null} onClick={() => void check(g.id, false)}>{checking === g.id ? 'Guardando…' : 'Marcar como no ha llegado'}</button></div> : <button className="button button-orange small" disabled={scanPending || checking !== null} onClick={() => void check(g.id)}>{checking === g.id ? 'Guardando…' : 'Registrar entrada'}</button>}</div>)}</div>}<div className="checkin-event-card"><div className="event-date-block"><strong>17</strong><span>NOV<br />2026</span></div><div><p className="eyebrow">Evento de hoy</p><h3>{event.title} <span>{event.accent}</span></h3><p className="muted"><MapPin size={15} /> {event.venue} · {event.city}</p></div><div className="checkin-count"><strong>{checked.length}</strong><span>registrados</span></div></div>{scannerOpen && <QrScanner onClose={() => setScannerOpen(false)} onCode={resolveQr} code={scanCode} setCode={setScanCode} />}</section>
+  return <section className="checkin-page"><div className="checkin-intro"><p className="eyebrow orange">Registro en evento</p><h2>Bienvenidos</h2><p className="muted">Busca a la persona invitada o escanea su código QR para registrar su llegada.</p></div><div className="checkin-tools"><div className="checkin-search"><Search size={24} /><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Escribe un nombre, correo o empresa..." /></div><button className="button button-orange scan-button" disabled={scanPending || checking !== null} onClick={() => { setScannerError(''); setScanNotice(''); setScanCode(''); setScannerOpen(true) }}><QrCode size={19} /> {scannerError ? 'Volver a escanear QR' : 'Escanear QR'}</button></div>{scanPending && <p className="checkin-feedback" role="status">Validando invitación…</p>}{scanNotice && <p className="checkin-feedback checkin-success" role="status">{scanNotice}</p>}{scannerError && <p className="form-error checkin-feedback" role="alert">{scannerError}</p>}{attendanceError && !scannerError && <p className="form-error" role="alert">{attendanceError}</p>}{matches.length > 0 && <div className="checkin-results">{matches.map(g => <div className="checkin-result" key={g.id}><div className="table-avatar">{g.name.split(' ').map(n => n[0]).slice(0, 2).join('')}</div><div className="guest-name"><strong>{g.name}</strong><small>{g.company}</small></div>{g.checkedIn ? <div className="attendance-actions"><span className="present"><CheckCircle2 size={17} /> Presente</span><button className="row-action" disabled={scanPending || checking !== null} onClick={() => void check(g.id, false)}>{checking === g.id ? 'Guardando…' : 'Marcar como no ha llegado'}</button></div> : <button className="button button-orange small" disabled={scanPending || checking !== null} onClick={() => void check(g.id)}>{checking === g.id ? 'Guardando…' : 'Registrar entrada'}</button>}</div>)}</div>}<div className="checkin-event-card"><div className="event-date-block"><strong>17</strong><span>NOV<br />2026</span></div><div><p className="eyebrow">Evento de hoy</p><h3>{event.title} <span>{event.accent}</span></h3><p className="muted"><MapPin size={15} /> {event.venue} · {event.city}</p></div><div className="checkin-count"><strong>{checked.length}</strong><span>registrados</span></div></div><section className="arrivals-panel" aria-labelledby="arrivals-title"><div className="arrivals-heading"><div><p className="eyebrow orange">Asistencia en vivo</p><h3 id="arrivals-title">Invitados que ya llegaron</h3></div><span aria-label={`${arrivals.length} invitados registrados`}>{arrivals.length}</span></div>{isPending && supabase ? <p className="arrivals-empty" role="status">Cargando llegadas…</p> : isError && supabase && !queriedGuests ? <p className="arrivals-empty" role="alert">No pudimos cargar las llegadas. Revisa tu conexión.</p> : arrivals.length ? <ol className="arrivals-list">{arrivals.map(guest => <li key={guest.id}><span className="table-avatar" aria-hidden="true">{guest.name.split(' ').map(part => part[0]).slice(0, 2).join('')}</span><div><strong>{guest.name}</strong><small>{guest.company || 'Sin empresa'}</small></div><CheckCircle2 size={17} aria-hidden="true" /></li>)}</ol> : <p className="arrivals-empty">Aún no hay invitados con llegada registrada.</p>}</section>{scannerOpen && <QrScanner onClose={() => setScannerOpen(false)} onCode={resolveQr} code={scanCode} setCode={setScanCode} />}</section>
 }
 
 function ConfigurationPage() {
