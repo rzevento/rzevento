@@ -30,7 +30,7 @@ const ast = ts.createSourceFile('main.tsx', source, ts.ScriptTarget.Latest, true
 const componentSource = ast.statements.filter(ts.isFunctionDeclaration).map(node => node.getText(ast)).join('\n').replaceAll('import.meta.env', '({})')
 const icons = source.match(/import \{ ([^}]+) \} from 'lucide-react'/)[1].split(', ').map(name => name.trim())
 const guest = { id: 'guest-1', name: 'Persona de prueba', company: 'Empresa', email: 'test@example.com', phone: '3312345678', invite: 'Pendiente', status: 'Pendiente', checkedIn: false }
-function render(component, { role = 'staff', profilePending = false, profileError = false, authenticated = true, sent = false, captureButtons, onDownload } = {}) {
+function render(component, { role = 'staff', actorIsAdmin = role === 'admin', impersonationId = null, profilePending = false, profileError = false, authenticated = true, sent = false, captureButtons, onDownload } = {}) {
   const data = [{ ...guest, invite: sent ? 'Enviada' : 'Pendiente' }]
   const stateValues = component === 'AdminLayout' ? [true, authenticated, false, 'user-1', false] : []
   let stateIndex = 0
@@ -55,7 +55,7 @@ function render(component, { role = 'staff', profilePending = false, profileErro
       if (queryKey[0] === 'event-members') return { data: [{ userId: 'user-1', displayName: 'Administradora', email: 'admin@example.com', role: 'Administrador', roleCode: 'admin' }, { userId: 'user-2', displayName: 'Integrante', email: 'staff@example.com', role: 'Equipo', roleCode: 'staff' }], isLoading: false }
       if (queryKey[0] === 'configuration-profile') return { data: { userId: 'user-1', roleCode: 'admin' }, isLoading: false }
       return queryKey[0] === 'organizer-profile'
-        ? { data: profilePending || profileError ? undefined : { displayName: 'Persona de prueba', role: 'Equipo', roleCode: role, actorIsAdmin: role === 'admin', actorUserId: 'user-1', userId: 'user-1', eventId: 'event-1' }, isPending: profilePending, isError: profileError }
+        ? { data: profilePending || profileError ? undefined : { displayName: 'Persona de prueba', role: 'Equipo', roleCode: role, actorIsAdmin, actorUserId: 'user-1', userId: 'user-1', eventId: 'event-1', impersonationId }, isPending: profilePending, isError: profileError }
         : { data, isPending: false, isError: false }
     },
     useMutation: () => ({ mutate() {} }), useIsMutating: () => 0,
@@ -129,8 +129,13 @@ test('effective profile comes from the server authorization context', async () =
   assert.equal(result.data.roleCode, 'staff')
 })
 test('only the real administrator sees the impersonation control', () => {
-  assert.match(render('AdminLayout', {role:'admin'}), /Ver como usuario/)
+  const admin = render('AdminLayout', {role:'admin'})
+  assert.match(admin, /<nav[^>]*>.*Ver como usuario.*<\/nav>/)
+  assert.doesNotMatch(admin.slice(admin.indexOf('<main')), /Ver como usuario/)
   for (const role of ['staff','viewer',null,'unexpected']) assert.doesNotMatch(render('AdminLayout', {role}), /Ver como usuario/)
+  const impersonated = render('AdminLayout', { role: 'staff', actorIsAdmin: true, impersonationId: 'session-1' })
+  assert.match(impersonated, /<nav[^>]*>.*Volver a mi cuenta.*<\/nav>/)
+  assert.match(impersonated, /Actuando como Persona de prueba/)
 })
 
 test('administrator export button downloads the guest list', async () => {
