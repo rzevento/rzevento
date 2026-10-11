@@ -76,6 +76,7 @@ for (const role of ['staff', 'viewer', null, 'unexpected']) {
     const shell = render('AdminLayout', { role })
     assert.match(shell, /> Resumen</)
     assert.match(shell, /> Invitados /)
+    assert.match(shell, /<button[^>]*aria-label="Cerrar sesión"[^>]*><span>Cerrar sesión<\/span><\/button>/)
     const summary = render('SummaryPage', { role })
     assert.match(summary, /Detalle de invitados/)
     const guests = render('GuestsPage', { role })
