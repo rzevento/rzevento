@@ -153,6 +153,19 @@ export async function markGuestCancelled(guestId: string) {
   })
 }
 
+export async function markGuestConfirmed(guestId: string) {
+  return organizerAction(async () => {
+    if (!supabase) return { data: null, error: null, demo: true }
+    const { data: guest, error: guestError } = await supabase.from('guests').select('event_id').eq('id', guestId).single()
+    if (guestError || !guest) return { data: null, error: guestError || new Error('Invitado no encontrado.'), demo: false }
+    const confirmedAt = new Date().toISOString()
+    const { data, error } = await supabase.from('rsvps').upsert({
+      event_id: guest.event_id, guest_id: guestId, status: 'confirmed', submitted_at: confirmedAt, updated_at: confirmedAt,
+    }, { onConflict: 'event_id,guest_id' }).select('guest_id, submitted_at').single()
+    return { data, error: error || (!data ? new Error('No se pudo registrar la confirmación.') : null), demo: false }
+  })
+}
+
 export async function checkInGuest(guestId: string) {
   return organizerAction(async () => {
     if (!supabase) return { data: null, error: null, demo: true }

@@ -69,9 +69,28 @@ test('cancellation does not write when the guest cannot be read', async () => {
   assert.ok((await api.markGuestCancelled('guest-1')).error)
   assert.equal(calls.length, 1)
 })
-test('demo edits, deletion and cancellation never write to the database', async () => {
+test('manual confirmation saves a timestamp for the selected guest', async () => {
+  const { api, calls } = setup()
+  assert.equal((await api.markGuestConfirmed('guest-1')).error, null)
+  assert.equal(calls.length, 2)
+  assert.equal(calls[0].filter.value, 'guest-1')
+  assert.equal(calls[1].table, 'rsvps')
+  assert.equal(calls[1].operation, 'upsert')
+  assert.equal(calls[1].values.event_id, 'event-1')
+  assert.equal(calls[1].values.guest_id, 'guest-1')
+  assert.equal(calls[1].values.status, 'confirmed')
+  assert.ok(!Number.isNaN(Date.parse(calls[1].values.submitted_at)))
+  assert.equal(calls[1].options.onConflict, 'event_id,guest_id')
+  assert.equal('submitted_email' in calls[1].values, false)
+})
+test('confirmation does not write when the guest cannot be read', async () => {
+  const { api, calls } = setup({ missing: true })
+  assert.ok((await api.markGuestConfirmed('guest-1')).error)
+  assert.equal(calls.length, 1)
+})
+test('demo guest actions never write to the database', async () => {
   const { api, calls } = setup({ demo: true })
-  for (const result of [await api.updateGuest('guest-1', input), await api.deleteGuest('guest-1'), await api.markGuestCancelled('guest-1')]) {
+  for (const result of [await api.updateGuest('guest-1', input), await api.deleteGuest('guest-1'), await api.markGuestCancelled('guest-1'), await api.markGuestConfirmed('guest-1')]) {
     assert.equal(result.demo, true)
     assert.equal(result.error, null)
   }
