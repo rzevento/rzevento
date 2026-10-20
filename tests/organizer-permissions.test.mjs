@@ -30,8 +30,8 @@ const ast = ts.createSourceFile('main.tsx', source, ts.ScriptTarget.Latest, true
 const componentSource = ast.statements.filter(ts.isFunctionDeclaration).map(node => node.getText(ast)).join('\n').replaceAll('import.meta.env', '({})')
 const icons = source.match(/import \{ ([^}]+) \} from 'lucide-react'/)[1].split(', ').map(name => name.trim())
 const guest = { id: 'guest-1', name: 'Persona de prueba', company: 'Empresa', email: 'test@example.com', phone: '3312345678', invite: 'Pendiente', status: 'Pendiente', checkedIn: false }
-function render(component, { role = 'staff', actorIsAdmin = role === 'admin', impersonationId = null, profilePending = false, profileError = false, authenticated = true, sent = false, captureButtons, onDownload } = {}) {
-  const data = [{ ...guest, invite: sent ? 'Enviada' : 'Pendiente' }]
+function render(component, { role = 'staff', actorIsAdmin = role === 'admin', impersonationId = null, profilePending = false, profileError = false, authenticated = true, sent = false, reminded = false, captureButtons, onDownload } = {}) {
+  const data = [{ ...guest, invite: sent ? 'Enviada' : 'Pendiente', reminderSentAt: reminded ? '2026-10-20T17:15:46Z' : null }]
   const stateValues = component === 'AdminLayout' ? [true, authenticated, false, 'user-1', false] : []
   let stateIndex = 0
   let exportBlob
@@ -63,7 +63,7 @@ function render(component, { role = 'staff', actorIsAdmin = role === 'admin', im
     Link: ({ children, to }) => React.createElement('a', { href: to }, children),
     Outlet: () => React.createElement('div', null, 'Contenido del panel'),
     ...Object.fromEntries(icons.map(name => [name, () => null])),
-    supabase: null, demoGuests: data, canSendPendingEmail: () => true, canSendReminderEmail: item => item.invite === 'Enviada' && item.status === 'Pendiente', whatsappPhone: value => value,
+    supabase: null, demoGuests: data, canSendPendingEmail: () => true, canSendReminderEmail: item => item.invite === 'Enviada' && item.status === 'Pendiente' && !item.reminderSentAt, whatsappPhone: value => value,
     localStorage: { getItem: () => null },
     event: { title: 'Evento de prueba', date: '17 de noviembre' },
   }
@@ -157,6 +157,10 @@ test('leader can send existing invitations but cannot manage guests or open sett
   assert.doesNotMatch(shell, /Configuración|Nueva invitación|Descargar lista de invitados/)
   for (const label of ['Enviar todas las invitaciones', 'Enviar todos los recordatorios', 'Enviar correo', 'Marcar WhatsApp enviado']) assert.match(guests, new RegExp(label))
   assert.match(render('GuestsPage', { role: 'leader', sent: true }), /Enviar todos los recordatorios \(1\)/)
+  const alreadyReminded = render('GuestsPage', { role: 'leader', sent: true, reminded: true })
+  assert.match(alreadyReminded, /Enviar todos los recordatorios \(0\)/)
+  assert.match(alreadyReminded, /Recordatorio enviado/)
+  assert.doesNotMatch(alreadyReminded, />Enviar recordatorio<\/button>/)
   for (const label of ['Exportar CSV', 'Cargar masivamente', 'Agregar invitado', 'Editar', 'Eliminar']) assert.doesNotMatch(guests, new RegExp(label))
   assert.match(settings, /No tienes acceso a la configuración/)
   assert.doesNotMatch(settings, /Usuarios autorizados/)

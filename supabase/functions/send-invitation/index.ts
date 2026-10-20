@@ -46,7 +46,7 @@ Deno.serve(async (request) => {
 
     const admin = userClient
     const { data: invitation, error: invitationError } = await admin.from('invitations')
-      .select('id, token, status, sent_at').eq('event_id', guest.event_id).eq('guest_id', guest.id).maybeSingle()
+      .select('id, token, status, sent_at, reminder_sent_at').eq('event_id', guest.event_id).eq('guest_id', guest.id).maybeSingle()
     if (invitationError) {
       console.error('send-invitation: invitation lookup failed', {
         code: invitationError.code,
@@ -65,6 +65,7 @@ Deno.serve(async (request) => {
       if (rsvp?.status === 'confirmed' || rsvp?.status === 'cancelled' || rsvp?.status === 'declined') {
         return json({ error: 'Este invitado ya respondió; no se envió el recordatorio.' }, 409)
       }
+      if (invitation.reminder_sent_at) return json({ ok: true, already_sent: true, reminder_sent_at: invitation.reminder_sent_at })
     }
     if ((invitation.sent_at || invitation.status === 'sent') && input?.resend !== true) return json({ ok: true, already_sent: true })
 
@@ -108,10 +109,10 @@ Deno.serve(async (request) => {
 
     const serviceClient = createClient(supabaseUrl, secretKey, { auth: { persistSession: false, autoRefreshToken: false } })
     const { data: saved, error: updateError } = await serviceClient.from('invitations')
-      .update({ status: 'sent', sent_at: new Date().toISOString() })
-      .eq('id', invitation.id).eq('event_id', guest.event_id).eq('guest_id', guest.id).select('id').maybeSingle()
+      .update(reminder ? { reminder_sent_at: new Date().toISOString() } : { status: 'sent', sent_at: new Date().toISOString() })
+      .eq('id', invitation.id).eq('event_id', guest.event_id).eq('guest_id', guest.id).select('id, reminder_sent_at').maybeSingle()
     if (updateError || !saved) return json({ error: 'Make confirmó el envío, pero no se guardó el estado. No reenvíes: revisa la invitación en Supabase.' }, 500)
-    return json({ ok: true, invitation_url: invitationUrl })
+    return json({ ok: true, invitation_url: invitationUrl, ...(reminder ? { reminder_sent_at: saved.reminder_sent_at } : {}) })
   } catch {
     return json({ error: 'No se pudo completar la solicitud. Revisa el historial de Make antes de reintentar.' }, 500)
   }

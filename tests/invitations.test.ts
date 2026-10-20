@@ -19,6 +19,7 @@ test('bulk reminders include only emailed invitations awaiting a response', () =
   assert.equal(canSendReminderEmail({ ...pending, invite: 'Pendiente' }), false)
   assert.equal(canSendReminderEmail({ ...pending, status: 'Confirmado' }), false)
   assert.equal(canSendReminderEmail({ ...pending, status: 'Canceló' }), false)
+  assert.equal(canSendReminderEmail({ ...pending, reminderSentAt: '2026-10-20T17:15:46Z' }), false)
 })
 
 test('normalizes Mexican local numbers and explicit international numbers', () => {

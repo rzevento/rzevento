@@ -1,5 +1,5 @@
 export type GuestStatus = 'Confirmado' | 'Pendiente' | 'Canceló'
-export type Guest = { id: string; name: string; company: string; email: string; phone: string; invite: string; status: GuestStatus; checkedIn: boolean; checkedInAt?: string | null; confirmedAt?: string | null; whatsappSentAt?: string | null; invitationToken?: string | null }
+export type Guest = { id: string; name: string; company: string; email: string; phone: string; invite: string; status: GuestStatus; checkedIn: boolean; checkedInAt?: string | null; confirmedAt?: string | null; whatsappSentAt?: string | null; reminderSentAt?: string | null; invitationToken?: string | null }
 export const normalize = (value: string) => value.trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').toLowerCase()
 export function summarize(guests: Guest[]) {
   return { total: guests.length, confirmed: guests.filter(g => g.status === 'Confirmado').length,
