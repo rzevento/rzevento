@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { canSendPendingEmail, whatsappPhone, whatsappInvitationUrl } from '../src/lib/invitations.ts'
+import { canSendPendingEmail, canSendReminderEmail, whatsappPhone, whatsappInvitationUrl } from '../src/lib/invitations.ts'
 
 test('bulk email only includes contacts with email and no recorded delivery in either channel', () => {
   const pending = { email: 'ana@example.com', invite: 'Pendiente' }
@@ -10,6 +10,15 @@ test('bulk email only includes contacts with email and no recorded delivery in e
   assert.equal(canSendPendingEmail({ ...pending, invite: 'Enviada' }), false)
   assert.equal(canSendPendingEmail({ ...pending, whatsappSentAt: '2026-09-29T12:00:00Z' }), false)
   assert.equal(canSendPendingEmail({ ...pending, invite: 'Enviada', whatsappSentAt: '2026-09-29T12:00:00Z' }), false)
+})
+
+test('bulk reminders include only emailed invitations awaiting a response', () => {
+  const pending = { email: 'ana@example.com', invite: 'Enviada', status: 'Pendiente' }
+  assert.equal(canSendReminderEmail(pending), true)
+  assert.equal(canSendReminderEmail({ ...pending, email: '   ' }), false)
+  assert.equal(canSendReminderEmail({ ...pending, invite: 'Pendiente' }), false)
+  assert.equal(canSendReminderEmail({ ...pending, status: 'Confirmado' }), false)
+  assert.equal(canSendReminderEmail({ ...pending, status: 'Canceló' }), false)
 })
 
 test('normalizes Mexican local numbers and explicit international numbers', () => {

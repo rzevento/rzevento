@@ -63,14 +63,14 @@ function render(component, { role = 'staff', actorIsAdmin = role === 'admin', im
     Link: ({ children, to }) => React.createElement('a', { href: to }, children),
     Outlet: () => React.createElement('div', null, 'Contenido del panel'),
     ...Object.fromEntries(icons.map(name => [name, () => null])),
-    supabase: null, demoGuests: data, canSendPendingEmail: () => true, whatsappPhone: value => value,
+    supabase: null, demoGuests: data, canSendPendingEmail: () => true, canSendReminderEmail: item => item.invite === 'Enviada' && item.status === 'Pendiente', whatsappPhone: value => value,
     localStorage: { getItem: () => null },
     event: { title: 'Evento de prueba', date: '17 de noviembre' },
   }
   vm.runInNewContext(compile(componentSource + `\nexports.Component = ${component};`), sandbox)
   return renderToStaticMarkup(React.createElement(OrganizerRoleContext.Provider, { value: role }, React.createElement(sandbox.exports.Component)))
 }
-const restrictedLabels = ['Nueva invitación', 'Descargar lista de invitados', 'Enviar todas las invitaciones', 'Exportar CSV', 'Exportar filtrados', 'Cargar masivamente', 'Agregar invitado', 'Enviar correo', 'Reenviar invitación', 'Abrir WhatsApp', 'Marcar WhatsApp enviado']
+const restrictedLabels = ['Nueva invitación', 'Descargar lista de invitados', 'Enviar todas las invitaciones', 'Enviar todos los recordatorios', 'Exportar CSV', 'Exportar filtrados', 'Cargar masivamente', 'Agregar invitado', 'Enviar correo', 'Reenviar invitación', 'Abrir WhatsApp', 'Marcar WhatsApp enviado']
 for (const role of ['staff', 'viewer', null, 'unexpected']) {
   test(`${role}: summary and guest consultation remain available without invitation controls`, () => {
     const shell = render('AdminLayout', { role })
@@ -155,7 +155,8 @@ test('leader can send existing invitations but cannot manage guests or open sett
   const guests = render('GuestsPage', { role: 'leader' })
   const settings = render('ConfigurationPage', { role: 'leader' })
   assert.doesNotMatch(shell, /Configuración|Nueva invitación|Descargar lista de invitados/)
-  for (const label of ['Enviar todas las invitaciones', 'Enviar correo', 'Marcar WhatsApp enviado']) assert.match(guests, new RegExp(label))
+  for (const label of ['Enviar todas las invitaciones', 'Enviar todos los recordatorios', 'Enviar correo', 'Marcar WhatsApp enviado']) assert.match(guests, new RegExp(label))
+  assert.match(render('GuestsPage', { role: 'leader', sent: true }), /Enviar todos los recordatorios \(1\)/)
   for (const label of ['Exportar CSV', 'Cargar masivamente', 'Agregar invitado', 'Editar', 'Eliminar']) assert.doesNotMatch(guests, new RegExp(label))
   assert.match(settings, /No tienes acceso a la configuración/)
   assert.doesNotMatch(settings, /Usuarios autorizados/)
