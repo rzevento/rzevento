@@ -55,12 +55,23 @@ Deno.serve(async (request) => {
       return json({ error: 'No se pudo consultar la invitación. Revisa los registros de send-invitation en Supabase.' }, 500)
     }
     if (!invitation) return json({ error: 'Este invitado no tiene una invitación asociada al evento' }, 404)
+    const reminder = input?.reminder === true
+    if (reminder) {
+      if (input?.resend !== true) return json({ error: 'El recordatorio requiere un reenvío explícito.' }, 400)
+      if (!invitation.sent_at && invitation.status !== 'sent') return json({ error: 'Envía primero la invitación por correo antes de enviar un recordatorio.' }, 400)
+      const { data: rsvp, error: rsvpError } = await userClient.from('rsvps')
+        .select('status').eq('event_id', guest.event_id).eq('guest_id', guest.id).maybeSingle()
+      if (rsvpError) return json({ error: 'No se pudo verificar la respuesta del invitado.' }, 500)
+      if (rsvp?.status === 'confirmed' || rsvp?.status === 'cancelled' || rsvp?.status === 'declined') {
+        return json({ error: 'Este invitado ya respondió; no se envió el recordatorio.' }, 409)
+      }
+    }
     if ((invitation.sent_at || invitation.status === 'sent') && input?.resend !== true) return json({ ok: true, already_sent: true })
 
-    const webhook = Deno.env.get('MAKE_WEBHOOK_URL')?.trim()
+    const webhook = Deno.env.get(reminder ? 'MAKE_REMINDER_WEBHOOK_URL' : 'MAKE_WEBHOOK_URL')?.trim()
     const apiKey = Deno.env.get('MAKE_WEBHOOK_API_KEY')?.trim()
     const publicSite = Deno.env.get('PUBLIC_SITE_URL')?.trim()
-    if (!webhook || !apiKey || !publicSite) return json({ error: 'Configura MAKE_WEBHOOK_URL, MAKE_WEBHOOK_API_KEY y PUBLIC_SITE_URL en Secrets' }, 500)
+    if (!webhook || !apiKey || !publicSite) return json({ error: reminder ? 'Configura MAKE_REMINDER_WEBHOOK_URL para enviar recordatorios.' : 'Configura MAKE_WEBHOOK_URL, MAKE_WEBHOOK_API_KEY y PUBLIC_SITE_URL en Secrets' }, 500)
     let webhookUrl: URL, siteUrl: URL
     try {
       webhookUrl = new URL(webhook)
@@ -85,6 +96,7 @@ Deno.serve(async (request) => {
           guest_name: escapeHtml(guest.full_name?.trim() || 'invitado'),
           email: guest.email,
           invitation_url: invitationUrl,
+          ...(reminder ? { reminder: true } : {}),
         }),
         signal: AbortSignal.timeout(25000),
       })

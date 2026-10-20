@@ -34,6 +34,14 @@ test('encodes the personal link and special characters in the prepared message',
   assert.ok(url.searchParams.get('text')?.includes('https://evento.example.com/registro/token-personal'))
 })
 
+test('reminder has different text while retaining the same personal link', () => {
+  const invitation = new URL(whatsappInvitationUrl('3312345678', 'Ana', 'token', 'https://evento.example.com'))
+  const reminder = new URL(whatsappInvitationUrl('3312345678', 'Ana', 'token', 'https://evento.example.com', true))
+  assert.notEqual(reminder.searchParams.get('text'), invitation.searchParams.get('text'))
+  assert.match(reminder.searchParams.get('text') || '', /Aún no hemos recibido su respuesta/)
+  assert.match(reminder.searchParams.get('text') || '', /https:\/\/evento.example.com\/registro\/token/)
+})
+
 test('does not expose placeholder names or create links without a token', () => {
   const url = new URL(whatsappInvitationUrl('3312345678', 'Invitado pendiente', 'token', 'https://evento.example.com'))
   assert.ok(url.searchParams.get('text')?.startsWith('Reciba un cordial saludo.'))

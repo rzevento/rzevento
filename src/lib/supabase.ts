@@ -238,10 +238,10 @@ export async function markInvitationSent(guestId: string) {
   })
 }
 
-export async function sendInvitation(guestId: string, resend = false) {
+export async function sendInvitation(guestId: string, resend = false, reminder = false) {
   return organizerAction(async () => {
     if (!supabase) return { data: null, error: null, demo: true }
-    const { data, error } = await supabase.functions.invoke('send-invitation', { body: { guest_id: guestId, resend } })
+    const { data, error } = await supabase.functions.invoke('send-invitation', { body: { guest_id: guestId, resend, reminder } })
     if (error && 'context' in error && error.context instanceof Response) {
       const details = await error.context.json().catch(() => null)
       if (typeof details?.error === 'string') return { data, error: new Error(details.error), demo: false }

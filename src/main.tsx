@@ -386,25 +386,27 @@ function InvitationState({ guest, channel = 'email', disabled = false, menuActio
   const [emailNotice, setEmailNotice] = useState('')
   const isDemo = !supabase
   let whatsappUrl = ''
+  let whatsappReminderUrl = ''
   let whatsappHint = ''
   if (!isDemo && guest.phone) {
     try {
       whatsappUrl = whatsappInvitationUrl(guest.phone, guest.name, guest.invitationToken || '', import.meta.env.VITE_PUBLIC_SITE_URL || window.location.origin)
+      if (guest.status === 'Pendiente' && (guest.whatsappSentAt || guest.invite === 'Enviada')) whatsappReminderUrl = whatsappInvitationUrl(guest.phone, guest.name, guest.invitationToken || '', import.meta.env.VITE_PUBLIC_SITE_URL || window.location.origin, true)
     } catch (cause) {
       whatsappHint = cause instanceof Error ? cause.message : 'No se pudo preparar el enlace de WhatsApp.'
     }
   }
   const emailMutation = useMutation({ mutationKey: ['invitation-send'], mutationFn: sendEmail })
   const whatsappMutation = useMutation({ mutationKey: ['invitation-send'], mutationFn: markWhatsApp })
-  async function sendEmail() {
+  async function sendEmail(reminder = false) {
     if (!canSendInvitations || saving || disabled) return
     setSaving('email')
     setError('')
     setEmailNotice('')
     try {
-      const result = await sendInvitation(guest.id, guest.invite === 'Enviada')
+      const result = await sendInvitation(guest.id, guest.invite === 'Enviada', reminder)
       if (result.error) throw result.error
-      setEmailNotice(guest.invite === 'Enviada' ? 'Invitación reenviada' : 'Invitación enviada')
+      setEmailNotice(reminder ? 'Recordatorio enviado' : guest.invite === 'Enviada' ? 'Invitación reenviada' : 'Invitación enviada')
       queryClient.setQueryData<Guest[]>(['guests'], current => (current || demoGuests).map(item => item.id === guest.id ? { ...item, invite: 'Enviada' } : item))
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'No se pudo confirmar el envío. Revisa el historial de Make antes de reintentar.')
@@ -428,7 +430,7 @@ function InvitationState({ guest, channel = 'email', disabled = false, menuActio
   }
   if (!canSendInvitations && channel === 'email') return <span className={guest.invite === 'Enviada' ? 'sent-label' : 'muted'}>{!guest.email ? 'Sin correo' : guest.invite === 'Enviada' ? 'Enviado' : 'Pendiente de envío'}</span>
   if (channel === 'email') return <div className="invitation-email">
-    {!guest.email ? <span className="muted">Sin correo</span> : guest.invite === 'Enviada' ? <><span className="sent-label"><Send size={13} /> Enviado</span><button className="send-inline" disabled={disabled || Boolean(saving)} onClick={() => emailMutation.mutate()}>{saving === 'email' ? 'Reenviando…' : 'Reenviar invitación'}</button></> : <button className="send-inline" disabled={disabled || Boolean(saving)} onClick={() => emailMutation.mutate()}>{saving === 'email' ? 'Enviando…' : 'Enviar correo'}</button>}
+    {!guest.email ? <span className="muted">Sin correo</span> : guest.invite === 'Enviada' ? <><span className="sent-label"><Send size={13} /> Enviado</span><button className="send-inline" disabled={disabled || Boolean(saving)} onClick={() => emailMutation.mutate(false)}>{saving === 'email' ? 'Enviando…' : 'Reenviar invitación'}</button>{guest.status === 'Pendiente' && <button className="send-inline" disabled={disabled || Boolean(saving)} onClick={() => emailMutation.mutate(true)}>Enviar recordatorio</button>}</> : <button className="send-inline" disabled={disabled || Boolean(saving)} onClick={() => emailMutation.mutate(false)}>{saving === 'email' ? 'Enviando…' : 'Enviar correo'}</button>}
     {emailNotice && <small role="status">{emailNotice}</small>}
     {error && <p className="form-error" role="alert">{error}</p>}
   </div>
@@ -446,6 +448,7 @@ function InvitationState({ guest, channel = 'email', disabled = false, menuActio
         {guest.whatsappSentAt ? <><span className="sent-label"><Check size={13} /> Enviado manualmente</span><time dateTime={guest.whatsappSentAt}>{new Date(guest.whatsappSentAt).toLocaleString('es-MX', { dateStyle: 'short', timeStyle: 'short' })}</time></> : <span className="muted">{guest.phone ? 'Pendiente de envío' : 'Sin celular registrado'}</span>}
         {canSendInvitations && guest.phone && <>
           {whatsappUrl && <a className="row-action whatsapp-action" href={whatsappUrl} target="_blank" rel="noopener noreferrer">Abrir WhatsApp <ArrowRight size={12} /></a>}
+          {whatsappReminderUrl && <a className="row-action whatsapp-action" href={whatsappReminderUrl} target="_blank" rel="noopener noreferrer">Abrir recordatorio en WhatsApp <ArrowRight size={12} /></a>}
           {isDemo && <small>Modo demo: no se abre un mensaje real.</small>}
           {whatsappHint && <small>{whatsappHint}</small>}
           {!guest.whatsappSentAt && <><button className="row-action" disabled={disabled || Boolean(saving) || !whatsappPhone(guest.phone)} onClick={() => whatsappMutation.mutate()}>{saving === 'whatsapp' ? 'Guardando…' : 'Marcar WhatsApp enviado'}</button><small>Pulsa después de enviarlo en WhatsApp.</small></>}

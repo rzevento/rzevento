@@ -14,7 +14,7 @@ export function whatsappPhone(value: string): string | null {
   return /^[1-9]\d{7,14}$/.test(digits) ? digits : null
 }
 
-export function whatsappInvitationUrl(phone: string, name: string, token: string, siteUrl: string): string {
+export function whatsappInvitationUrl(phone: string, name: string, token: string, siteUrl: string, reminder = false): string {
   const recipient = whatsappPhone(phone)
   if (!recipient) throw new Error('Revisa el celular. Usa 10 dígitos para México o + y el código de país para otros países.')
   if (!token) throw new Error('Este invitado todavía no tiene un enlace de invitación.')
@@ -25,6 +25,8 @@ export function whatsappInvitationUrl(phone: string, name: string, token: string
   }
   const invitation = new URL(`/registro/${encodeURIComponent(token)}`, site.origin).href
   const greeting = name.trim() && name.trim() !== 'Invitado pendiente' ? `Apreciable ${name.trim()}:` : 'Reciba un cordial saludo.'
-  const message = `${greeting}\n\nRZ Consultoría tiene el gusto de invitarle a la conferencia privada:\n\n*Familias empresarias en la era de las turbulencias: retos y oportunidades*\n\nUn encuentro para reflexionar sobre los desafíos y las oportunidades de las familias empresarias, con la participación de *Manuel Bermejo Sánchez* y la moderación de *José Roberto Romo Zepeda*.\n\n*Fecha:* martes 17 de noviembre de 2026.\n*Horario:* 9:00 h. Registro a partir de las 8:30 h.\n*Sede:* Hyatt Regency Andares, Guadalajara, Jalisco.\n\nAgradeceremos confirmar su asistencia antes del 16 de noviembre a través de su enlace personal, donde podrá consultar los detalles del evento:\n${invitation}\n\nEsta invitación es personal e intransferible.\n\nSerá un gusto contar con su presencia.\n\nAtentamente,\n*RZ Consultoría*`
+  const message = reminder
+    ? `${greeting}\n\nLe recordamos con gusto la invitación de RZ Consultoría a *Familias empresarias en la era de las turbulencias: retos y oportunidades*, el martes 17 de noviembre de 2026 a las 9:00 h en Hyatt Regency Andares, Guadalajara. El registro inicia a las 8:30 h.\n\nAún no hemos recibido su respuesta. Le agradeceremos confirmar su asistencia antes del 16 de noviembre desde su enlace personal, donde también encontrará los detalles del evento:\n${invitation}\n\nSi ya respondió recientemente, por favor omita este recordatorio. La invitación es personal e intransferible.\n\nSerá un gusto contar con su presencia.\n\n*RZ Consultoría*`
+    : `${greeting}\n\nRZ Consultoría tiene el gusto de invitarle a la conferencia privada:\n\n*Familias empresarias en la era de las turbulencias: retos y oportunidades*\n\nUn encuentro para reflexionar sobre los desafíos y las oportunidades de las familias empresarias, con la participación de *Manuel Bermejo Sánchez* y la moderación de *José Roberto Romo Zepeda*.\n\n*Fecha:* martes 17 de noviembre de 2026.\n*Horario:* 9:00 h. Registro a partir de las 8:30 h.\n*Sede:* Hyatt Regency Andares, Guadalajara, Jalisco.\n\nAgradeceremos confirmar su asistencia antes del 16 de noviembre a través de su enlace personal, donde podrá consultar los detalles del evento:\n${invitation}\n\nEsta invitación es personal e intransferible.\n\nSerá un gusto contar con su presencia.\n\nAtentamente,\n*RZ Consultoría*`
   return `https://wa.me/${recipient}?text=${encodeURIComponent(message)}`
 }
