@@ -135,6 +135,7 @@ function RegistrationPage({ token = 'demo' }: { token?: string }) {
   const [resolvedToken, setResolvedToken] = useState(directToken)
   const [sent, setSent] = useState(false)
   const [cancelled, setCancelled] = useState(false)
+  const [cancelling, setCancelling] = useState(false)
   const [alreadyRegistered, setAlreadyRegistered] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
@@ -156,6 +157,10 @@ function RegistrationPage({ token = 'demo' }: { token?: string }) {
       }
       setForm({ name: result.data.name || '', email: result.data.email || '', phone: result.data.phone || '', company: result.data.company || '' })
       setPrefillStatus('ready')
+      if (result.data.status === 'confirmed') {
+        setAlreadyRegistered(true)
+        setSent(true)
+      }
     }).catch(() => {
       if (!active) return
       setError('No pudimos cargar tus datos. Intenta de nuevo.')
@@ -164,7 +169,20 @@ function RegistrationPage({ token = 'demo' }: { token?: string }) {
     return () => { active = false }
   }, [directToken, loadAttempt])
   const update = (key: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) => setForm({ ...form, [key]: e.target.value })
-  if (sent) return <main className="register-page success-page"><div className="success-card"><div className="success-icon">{cancelled ? <span>×</span> : <Check size={25} />}</div><p className="eyebrow">{cancelled ? 'Asistencia cancelada' : alreadyRegistered ? 'Asistencia confirmada' : 'Registro recibido'}</p><h1>{cancelled ? 'Tu cancelación quedó registrada.' : alreadyRegistered ? 'Tu asistencia ya está confirmada.' : `Gracias, ${form.name.split(' ')[0] || 'por confirmar'}.`}</h1><p>{cancelled ? 'Si cambias de opinión, puedes volver a confirmar desde este mismo enlace.' : alreadyRegistered ? 'Puedes descargar tu entrada o cancelar tu asistencia desde aquí.' : 'Tu lugar para la conferencia está apartado. Te esperamos el martes 17 de noviembre en Hyatt Regency Andares.'}</p>{!cancelled && <><div className="success-details"><CalendarDays size={18} /><span>{event.date}<br /><small>{event.time}</small></span></div><p className="pass-note"><ShieldCheck size={15} /> {form.email ? 'También recibirás tu entrada por correo.' : 'Si registraste un correo, también recibirás tu entrada por ahí.'} No es necesario imprimirla; puedes mostrarla desde tu celular.</p></>}<div className="success-actions">{!cancelled && <><button className="button button-orange" onClick={() => void downloadPass()}><Download size={16} /> Descargar entrada</button><Link className="outline-button" to="/informacion">Ver más sobre el evento <ArrowRight size={15} /></Link></>}{!cancelled && <button className="cancel-link" onClick={() => { void cancelRsvp(resolvedToken || token).then(result => { if (!result.error) setCancelled(true) }) }}>Ya no podré asistir</button>}</div></div></main>
+  if (sent) return <main className="register-page success-page"><div className="success-card"><div className="success-icon">{cancelled ? <span>×</span> : <Check size={25} />}</div><p className="eyebrow">{cancelled ? 'Asistencia cancelada' : alreadyRegistered ? 'Asistencia confirmada' : 'Registro recibido'}</p><h1>{cancelled ? 'Tu cancelación quedó registrada.' : alreadyRegistered ? 'Tu asistencia ya está confirmada.' : `Gracias, ${form.name.split(' ')[0] || 'por confirmar'}.`}</h1><p>{cancelled ? 'Si cambias de opinión, puedes volver a confirmar desde este mismo enlace.' : alreadyRegistered ? 'Tu registro ya fue recibido y tu lugar está reservado. No necesitas registrarte otra vez. Puedes descargar tu invitación o cancelar tu asistencia desde aquí.' : 'Tu lugar para la conferencia está apartado. Te esperamos el martes 17 de noviembre en Hyatt Regency Andares.'}</p>{!cancelled && <><div className="success-details"><CalendarDays size={18} /><span>{event.date}<br /><small>{event.time}</small></span></div><p className="pass-note"><ShieldCheck size={15} /> {form.email ? 'También recibirás tu entrada por correo.' : 'Si registraste un correo, también recibirás tu entrada por ahí.'} No es necesario imprimirla; puedes mostrarla desde tu celular.</p></>}<div className="success-actions">{!cancelled && <><button className="button button-orange" onClick={() => void downloadPass()}><Download size={16} /> Descargar invitación</button><Link className="outline-button" to="/informacion">Ver más sobre el evento <ArrowRight size={15} /></Link></>}{!cancelled && <button className="cancel-link" disabled={cancelling} onClick={() => void cancelAttendance()}>{cancelling ? 'Cancelando…' : 'Cancelar mi asistencia'}</button>}</div>{error && <p className="form-error" role="alert">{error}</p>}{cancelled && <button className="outline-button" onClick={() => { setSent(false); setCancelled(false); setAlreadyRegistered(false); setError('') }}>Volver a confirmar asistencia</button>}</div></main>
+  async function cancelAttendance() {
+    setCancelling(true)
+    setError('')
+    try {
+      const result = await cancelRsvp(resolvedToken || token)
+      if (result.error) throw result.error
+      setCancelled(true)
+    } catch {
+      setError('No pudimos cancelar tu asistencia. Intenta de nuevo.')
+    } finally {
+      setCancelling(false)
+    }
+  }
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
     if (prefillStatus !== 'ready' || submitting) return
@@ -180,7 +198,14 @@ function RegistrationPage({ token = 'demo' }: { token?: string }) {
       if (lookup.error) { setSubmitting(false); setError('No encontramos ese correo o celular en la lista de invitados.'); return }
       if (lookup.data?.status === 'already_registered') {
         currentToken = lookup.data.token || ''
+        const details = await getInvitationDetails(currentToken)
+        if (details.error || !details.data) {
+          setSubmitting(false)
+          setError('No pudimos cargar tu invitación. Intenta de nuevo.')
+          return
+        }
         setResolvedToken(currentToken)
+        setForm({ name: details.data.name || '', email: details.data.email || '', phone: details.data.phone || '', company: details.data.company || '' })
         setAlreadyRegistered(true)
         setSubmitting(false)
         setSent(true)
