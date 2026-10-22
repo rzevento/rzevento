@@ -222,7 +222,15 @@ function RegistrationPage({ token = 'demo' }: { token?: string }) {
     const result = await submitRsvp({ token: currentToken, ...form })
     setSubmitting(false)
     if (result.error) {
-      setError('No pudimos completar el registro. Verifica tu enlace e inténtalo de nuevo.')
+      const conflict = result.error as { code?: string; message?: string; details?: string }
+      const description = `${conflict.message || ''} ${conflict.details || ''}`
+      if (conflict.code === '23505' && description.includes('guests_event_phone_key')) {
+        setError('Este celular ya está registrado con otro invitado. Verifica el número o contacta al organizador para recibir ayuda.')
+      } else if (conflict.code === '23505' && description.includes('guests_event_email_key')) {
+        setError('Este correo ya está registrado con otro invitado. Verifica el correo o contacta al organizador para recibir ayuda.')
+      } else {
+        setError('No pudimos completar el registro. Verifica tu enlace e inténtalo de nuevo.')
+      }
       return
     }
     setSent(true)
