@@ -195,6 +195,23 @@ function SeatingPrintSheet({ plan, event }: { plan: ReturnType<typeof seatingPla
       <div><p>Croquis del evento</p><h1>{event?.name || 'Distribución de mesas'}</h1>{event?.detail && <span>{event.detail}</span>}</div>
       <div className="seating-print-summary"><strong>{plan.totalTables}</strong> {plan.totalTables === 1 ? 'mesa' : 'mesas'} de {SEATS_PER_TABLE}<br />{plan.assigned} con mesa · {plan.unassigned.length} sin mesa<br /><small>Impreso el {printedAt}</small></div>
     </header>
+    <div className="seating-print-tables">
+      {plan.tables.map(table => <section key={table.number} className="seating-print-table">
+        <h2>Mesa {table.number}<span>{table.guests.length}/{SEATS_PER_TABLE}</span></h2>
+        <ol>{Array.from({ length: SEATS_PER_TABLE }, (_, index) => {
+          const guest = table.guests[index]
+          return <li key={index} className={guest ? '' : 'empty'}>{guest ? <><strong>{guest.name}</strong>{(guest.company && guest.company !== 'Sin empresa') || statusNote(guest) ? <small>{[guest.company !== 'Sin empresa' ? guest.company : '', statusNote(guest)].filter(Boolean).join(' · ')}</small> : null}</> : <span>Lugar libre</span>}</li>
+        })}</ol>
+      </section>)}
+      {Array.from({ length: plan.extraTables }, (_, index) => <section key={`extra-${index}`} className="seating-print-table extra">
+        <h2>Mesa extra{plan.extraTables > 1 ? ` ${index + 1}` : ''}<span>{SEATS_PER_TABLE}/{SEATS_PER_TABLE}</span></h2>
+        <p>Mesa completa de {SEATS_PER_TABLE} lugares, adicional a la lista de invitados.</p>
+      </section>)}
+    </div>
+    {plan.unassigned.length > 0 && <section className="seating-print-unassigned">
+      <h2>Sin mesa ({plan.unassigned.length})</h2>
+      <ol>{plan.unassigned.map(guest => <li key={guest.id}><strong>{guest.name}</strong>{[guest.company !== 'Sin empresa' ? guest.company : '', statusNote(guest)].filter(Boolean).join(' · ') && <small> · {[guest.company !== 'Sin empresa' ? guest.company : '', statusNote(guest)].filter(Boolean).join(' · ')}</small>}</li>)}</ol>
+    </section>}
     <section className="seating-print-floor">
       <h2>Salón<span><i className="seat taken" /> Ocupado <i className="seat warn" /> Canceló <i className="seat" /> Libre</span></h2>
       <div className="seating-print-rings">
@@ -216,22 +233,5 @@ function SeatingPrintSheet({ plan, event }: { plan: ReturnType<typeof seatingPla
         </div>)}
       </div>
     </section>
-    <div className="seating-print-tables">
-      {plan.tables.map(table => <section key={table.number} className="seating-print-table">
-        <h2>Mesa {table.number}<span>{table.guests.length}/{SEATS_PER_TABLE}</span></h2>
-        <ol>{Array.from({ length: SEATS_PER_TABLE }, (_, index) => {
-          const guest = table.guests[index]
-          return <li key={index} className={guest ? '' : 'empty'}>{guest ? <><strong>{guest.name}</strong>{(guest.company && guest.company !== 'Sin empresa') || statusNote(guest) ? <small>{[guest.company !== 'Sin empresa' ? guest.company : '', statusNote(guest)].filter(Boolean).join(' · ')}</small> : null}</> : <span>Lugar libre</span>}</li>
-        })}</ol>
-      </section>)}
-      {Array.from({ length: plan.extraTables }, (_, index) => <section key={`extra-${index}`} className="seating-print-table extra">
-        <h2>Mesa extra{plan.extraTables > 1 ? ` ${index + 1}` : ''}<span>{SEATS_PER_TABLE}/{SEATS_PER_TABLE}</span></h2>
-        <p>Mesa completa de {SEATS_PER_TABLE} lugares, adicional a la lista de invitados.</p>
-      </section>)}
-    </div>
-    {plan.unassigned.length > 0 && <section className="seating-print-unassigned">
-      <h2>Sin mesa ({plan.unassigned.length})</h2>
-      <ol>{plan.unassigned.map(guest => <li key={guest.id}><strong>{guest.name}</strong>{[guest.company !== 'Sin empresa' ? guest.company : '', statusNote(guest)].filter(Boolean).join(' · ') && <small> · {[guest.company !== 'Sin empresa' ? guest.company : '', statusNote(guest)].filter(Boolean).join(' · ')}</small>}</li>)}</ol>
-    </section>}
   </div>
 }

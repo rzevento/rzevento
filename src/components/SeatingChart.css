@@ -92,11 +92,11 @@
   .seating-print-summary { text-align: right; font-size: 9pt; line-height: 1.4; white-space: nowrap; }
   .seating-print-summary strong { font-size: 13pt; }
   .seating-print-summary small { font-size: 7.5pt; color: #444; }
-  .seating-print-floor { margin-bottom: 14px; break-inside: avoid-page; }
+  .seating-print-floor { margin-top: 14px; break-inside: avoid-page; }
   .seating-print-floor h2 { display: flex; justify-content: space-between; align-items: center; margin: 0 0 6px; font-size: 11pt; border-bottom: 1px solid #000; padding-bottom: 3px; }
   .seating-print-floor h2 span { display: inline-flex; align-items: center; gap: 5px; font-size: 8pt; font-weight: 600; }
   .seating-print-floor h2 .seat { position: static; display: inline-block; margin: 0 0 0 6px; transform: none; width: 10px; height: 10px; }
-  .seating-print-rings { display: grid; grid-template-columns: repeat(auto-fill, 118px); justify-content: center; gap: 2px 8px; }
+  .seating-print-rings { display: grid; grid-template-columns: repeat(4, 118px); justify-content: space-evenly; gap: 6px 8px; }
   .seating-print-ring { display: grid; place-items: center; break-inside: avoid; }
   .seating-print .seat-ring { width: 118px; height: 118px; }
   .seating-print .seat { width: 15px; height: 15px; margin: -7.5px 0 0 -7.5px; background: #fff; border: 1.2px solid #777; transform: rotate(calc(var(--i) * 45deg)) translateY(-47px); }
