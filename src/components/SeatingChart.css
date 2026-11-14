@@ -92,6 +92,21 @@
   .seating-print-summary { text-align: right; font-size: 9pt; line-height: 1.4; white-space: nowrap; }
   .seating-print-summary strong { font-size: 13pt; }
   .seating-print-summary small { font-size: 7.5pt; color: #444; }
+  .seating-print-floor { margin-bottom: 14px; break-inside: avoid-page; }
+  .seating-print-floor h2 { display: flex; justify-content: space-between; align-items: center; margin: 0 0 6px; font-size: 11pt; border-bottom: 1px solid #000; padding-bottom: 3px; }
+  .seating-print-floor h2 span { display: inline-flex; align-items: center; gap: 5px; font-size: 8pt; font-weight: 600; }
+  .seating-print-floor h2 .seat { position: static; display: inline-block; margin: 0 0 0 6px; transform: none; width: 10px; height: 10px; }
+  .seating-print-rings { display: grid; grid-template-columns: repeat(auto-fill, 118px); justify-content: center; gap: 2px 8px; }
+  .seating-print-ring { display: grid; place-items: center; break-inside: avoid; }
+  .seating-print .seat-ring { width: 118px; height: 118px; }
+  .seating-print .seat { width: 15px; height: 15px; margin: -7.5px 0 0 -7.5px; background: #fff; border: 1.2px solid #777; transform: rotate(calc(var(--i) * 45deg)) translateY(-47px); }
+  .seating-print .seat.taken { background: #000; border-color: #000; }
+  .seating-print .seat.warn { background: #aaa; border-color: #555; }
+  .seating-print .seat-top { inset: 28px; background: #fff; border: 1.5px solid #000; color: #000; }
+  .seating-print .seat-top strong { font-size: 19pt; }
+  .seating-print .seat-top small { color: #444; font-size: 7.5pt; }
+  .seating-print-ring.extra .seat-top { border-style: dashed; }
+  .seating-print-ring.extra .seat-top strong { font-size: 11pt; }
   .seating-print-tables { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
   .seating-print-table { border: 1px solid #000; padding: 6px 8px; break-inside: avoid; }
   .seating-print-table h2, .seating-print-unassigned h2 { display: flex; justify-content: space-between; margin: 0 0 4px; font-size: 11pt; border-bottom: 1px solid #000; padding-bottom: 3px; }

@@ -195,6 +195,27 @@ function SeatingPrintSheet({ plan, event }: { plan: ReturnType<typeof seatingPla
       <div><p>Croquis del evento</p><h1>{event?.name || 'Distribución de mesas'}</h1>{event?.detail && <span>{event.detail}</span>}</div>
       <div className="seating-print-summary"><strong>{plan.totalTables}</strong> {plan.totalTables === 1 ? 'mesa' : 'mesas'} de {SEATS_PER_TABLE}<br />{plan.assigned} con mesa · {plan.unassigned.length} sin mesa<br /><small>Impreso el {printedAt}</small></div>
     </header>
+    <section className="seating-print-floor">
+      <h2>Salón<span><i className="seat taken" /> Ocupado <i className="seat warn" /> Canceló <i className="seat" /> Libre</span></h2>
+      <div className="seating-print-rings">
+        {plan.tables.map(table => {
+          const count = table.guests.length
+          const cancelled = table.guests.filter(guest => guest.status === 'Canceló' && !guest.checkedIn).length
+          return <div key={table.number} className={`seating-print-ring${count >= SEATS_PER_TABLE ? ' full' : ''}`}>
+            <span className="seat-ring">
+              {Array.from({ length: SEATS_PER_TABLE }, (_, index) => <i key={index} className={`seat${index < count ? ' taken' : ''}${index >= count - cancelled && index < count ? ' warn' : ''}`} style={{ '--i': index } as CSSProperties} />)}
+              <span className="seat-top"><strong>{table.number}</strong><small>{count}/{SEATS_PER_TABLE}</small></span>
+            </span>
+          </div>
+        })}
+        {Array.from({ length: plan.extraTables }, (_, index) => <div key={`extra-${index}`} className="seating-print-ring full extra">
+          <span className="seat-ring">
+            {Array.from({ length: SEATS_PER_TABLE }, (_, seat) => <i key={seat} className="seat taken" style={{ '--i': seat } as CSSProperties} />)}
+            <span className="seat-top"><strong>Extra</strong><small>{SEATS_PER_TABLE}/{SEATS_PER_TABLE}</small></span>
+          </span>
+        </div>)}
+      </div>
+    </section>
     <div className="seating-print-tables">
       {plan.tables.map(table => <section key={table.number} className="seating-print-table">
         <h2>Mesa {table.number}<span>{table.guests.length}/{SEATS_PER_TABLE}</span></h2>
