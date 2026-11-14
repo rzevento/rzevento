@@ -6,7 +6,7 @@ export const SEATS_PER_TABLE = 8
 export const EXTRA_FULL_TABLES = 1
 /** guestId → número de mesa (1, 2, 3…). */
 export type SeatAssignments = Record<string, number>
-/** Quiénes cuentan para calcular las mesas: confirmados y sin respuesta, o solo confirmados. */
+/** Quiénes cuentan para calcular las mesas: confirmados y sin respuesta, o solo confirmados. Quien ya llegó siempre cuenta, aunque haya cancelado. */
 export type SeatingBase = 'active' | 'confirmed'
 export type SeatingTable = { number: number; guests: Guest[] }
 export type SeatChange = { guestId: string; tableNumber: number | null }
@@ -16,7 +16,7 @@ export function tablesNeeded(people: number, seats = SEATS_PER_TABLE) {
 }
 
 export function guestsToSeat(guests: Guest[], base: SeatingBase) {
-  return guests.filter(guest => base === 'confirmed' ? guest.status === 'Confirmado' : guest.status !== 'Canceló')
+  return guests.filter(guest => guest.checkedIn || (base === 'confirmed' ? guest.status === 'Confirmado' : guest.status !== 'Canceló'))
 }
 
 const byName = (a: Guest, b: Guest) => a.name.localeCompare(b.name, 'es', { sensitivity: 'base' })

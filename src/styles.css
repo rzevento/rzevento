@@ -239,6 +239,9 @@ body { background: var(--bg); color: var(--cream); }
 .manual-code input { min-width: 0; }
 .checkin-feedback { padding: 14px 16px; margin: 16px 0; background: #faf8f5; border: 1px solid #e6dfd7; font-size: 14px; line-height: 1.5; }
 .checkin-success { color: #316446; }
+.checkin-result .checkin-guest-name { flex-wrap: wrap; column-gap: 9px; row-gap: 2px; }
+.checkin-cancelled-note { flex-basis: 100%; display: flex; align-items: center; gap: 5px; margin-top: 6px; color: #9a4a00; font-size: 12px; font-weight: 600; line-height: 1.35; }
+.checkin-cancelled-note svg { flex: none; }
 .arrivals-panel { margin-top: 18px; background: #fffdf9; border: 1px solid #e0d8ce; }
 .arrivals-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 25px 30px 20px; }
 .arrivals-heading .eyebrow { margin-bottom: 9px; }

@@ -133,7 +133,7 @@ export default function SeatingChart({ guests, guestsLoading, guestsError, canEd
         {plan.tableCount || plan.extraTables ? <div className="seating-grid">
           {plan.tables.map(table => {
             const count = table.guests.length
-            const cancelled = table.guests.filter(guest => guest.status === 'Canceló').length
+            const cancelled = table.guests.filter(guest => guest.status === 'Canceló' && !guest.checkedIn).length
             return <button key={table.number} className={`seat-table${selected === table.number ? ' selected' : ''}${count >= SEATS_PER_TABLE ? ' full' : ''}`} aria-pressed={selected === table.number} aria-label={`Mesa ${table.number}: ${count} de ${SEATS_PER_TABLE} lugares ocupados${cancelled ? `, ${cancelled} canceló` : ''}`} onClick={() => setSelected(current => current === table.number ? null : table.number)}>
               <span className="seat-ring" aria-hidden="true">
                 {Array.from({ length: SEATS_PER_TABLE }, (_, index) => <i key={index} className={`seat${index < count ? ' taken' : ''}${index >= count - cancelled && index < count ? ' warn' : ''}`} style={{ '--i': index } as CSSProperties} />)}
@@ -155,7 +155,7 @@ export default function SeatingChart({ guests, guestsLoading, guestsError, canEd
           <div className="seating-detail-head"><div><p className="eyebrow orange">Mesa {selectedTable.number}</p><h3>{selectedTable.guests.length} de {SEATS_PER_TABLE} lugares</h3></div><button className="modal-close" aria-label="Cerrar mesa" onClick={() => setSelected(null)}><X size={18} /></button></div>
           {selectedTable.guests.length ? <ul className="seating-list">{selectedTable.guests.map(guest => <li key={guest.id}>
             <span className="table-avatar" aria-hidden="true">{initials(guest.name)}</span>
-            <div><strong>{guest.name}</strong><small>{guest.company}{guest.status !== 'Confirmado' && <em className={guest.status === 'Canceló' ? 'warn' : ''}> · {guest.status === 'Canceló' ? 'Canceló' : 'Sin respuesta'}</em>}</small></div>
+            <div><strong>{guest.name}</strong><small>{guest.company}{guest.status === 'Canceló' && guest.checkedIn ? <em> · Canceló, pero llegó</em> : guest.status !== 'Confirmado' && <em className={guest.status === 'Canceló' ? 'warn' : ''}> · {guest.status === 'Canceló' ? 'Canceló' : 'Sin respuesta'}</em>}</small></div>
             {canEdit && <div className="seating-row-actions">
               <select aria-label={`Mover a ${guest.name} a otra mesa`} disabled={busy || missingSetup} value="" onChange={e => assign(guest, Number(e.target.value))}><option value="" disabled>Mover…</option>{tableOptions(selectedTable.number)}</select>
               <button className="icon-only" disabled={busy || missingSetup} aria-label={`Quitar a ${guest.name} de la mesa`} title="Quitar de la mesa" onClick={() => assign(guest, null)}><UserMinus size={15} /></button>

@@ -32,6 +32,13 @@ test('la base de cálculo excluye cancelados y puede limitarse a confirmados', (
   assert.equal(seatingPlan(guests, {}, 'confirmed').people, 10)
 })
 
+test('un cancelado que llegó al evento sí cuenta para las mesas', () => {
+  const guests = [...many(8), guest('c1', { status: 'Canceló', checkedIn: true }), guest('c2', { status: 'Canceló' })]
+  assert.equal(seatingPlan(guests, {}, 'active').people, 9)
+  assert.equal(seatingPlan(guests, {}, 'confirmed').people, 9)
+  assert.ok(seatingPlan(guests, {}, 'active').unassigned.some(g => g.id === 'c1'))
+})
+
 test('las mesas ya asignadas se conservan aunque superen las necesarias', () => {
   const plan = seatingPlan(many(3), { 1: 5 }, 'active')
   assert.equal(plan.needed, 1)
