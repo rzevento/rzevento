@@ -1,7 +1,8 @@
 import { useState } from 'react'
+import { createPortal } from 'react-dom'
 import type { CSSProperties } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { AlertCircle, Download, Search, Sparkles, UserMinus, X } from 'lucide-react'
+import { AlertCircle, Download, Printer, Search, Sparkles, UserMinus, X } from 'lucide-react'
 import { normalize } from '../lib/dashboard'
 import type { Guest } from '../lib/dashboard'
 import { SEATS_PER_TABLE, applyChanges, autoAssign, seatingCsv, seatingPlan } from '../lib/seating'
@@ -9,8 +10,10 @@ import type { SeatAssignments, SeatChange, SeatingBase } from '../lib/seating'
 import { getSeatAssignments, saveSeatAssignments } from '../lib/supabase'
 import './SeatingChart.css'
 
-type Props = { guests: Guest[]; guestsLoading: boolean; guestsError: boolean; canEdit: boolean; demo: boolean }
+type Props = { guests: Guest[]; guestsLoading: boolean; guestsError: boolean; canEdit: boolean; demo: boolean; event?: { name: string; detail: string } }
 const initials = (name: string) => name.split(' ').map(part => part[0]).slice(0, 2).join('').toUpperCase()
+/** Aclaración junto al nombre cuando no es un confirmado normal. */
+const statusNote = (guest: Guest) => guest.status === 'Canceló' ? (guest.checkedIn ? 'Canceló, pero llegó' : 'Canceló') : guest.status === 'Pendiente' ? 'Sin respuesta' : ''
 
 function saveErrorMessage(error: { message?: string; code?: string }) {
   const message = error.message || ''
@@ -20,7 +23,7 @@ function saveErrorMessage(error: { message?: string; code?: string }) {
   return 'No pudimos guardar la mesa. Inténtalo de nuevo.'
 }
 
-export default function SeatingChart({ guests, guestsLoading, guestsError, canEdit, demo }: Props) {
+export default function SeatingChart({ guests, guestsLoading, guestsError, canEdit, demo, event }: Props) {
   const queryClient = useQueryClient()
   const seatsQuery = useQuery({
     queryKey: ['seat-assignments'],
@@ -102,6 +105,7 @@ export default function SeatingChart({ guests, guestsLoading, guestsError, canEd
     <div className="page-heading">
       <div><p className="eyebrow orange">Croquis del evento</p><h2>Distribución de mesas</h2><p className="muted">Mesas de {SEATS_PER_TABLE} personas. Elige una mesa para ver quién está sentado ahí y asignar lugares.</p></div>
       <div className="page-actions seating-actions">
+        <button className="row-action" onClick={() => window.print()} disabled={!plan.tableCount && !plan.extraTables}><Printer size={14} /> Imprimir croquis</button>
         <button className="row-action" onClick={exportCsv} disabled={!plan.tableCount}><Download size={14} /> Descargar por mesa</button>
         {canEdit && <button className="button button-orange small" disabled={busy || !plan.unassigned.length || missingSetup} onClick={seatEveryone}><Sparkles size={16} /> Acomodar automáticamente</button>}
       </div>
@@ -170,7 +174,7 @@ export default function SeatingChart({ guests, guestsLoading, guestsError, canEd
             : unassigned.length === 0 ? <p className="muted">Sin resultados.</p>
             : <ul className="seating-list">{unassigned.map(guest => <li key={guest.id}>
               <span className="table-avatar" aria-hidden="true">{initials(guest.name)}</span>
-              <div><strong>{guest.name}</strong><small>{guest.company}{guest.status !== 'Confirmado' && <em> · Sin respuesta</em>}</small></div>
+              <div><strong>{guest.name}</strong><small>{guest.company}{statusNote(guest) && <em> · {statusNote(guest)}</em>}</small></div>
               {canEdit && (selectedTable && selectedTable.guests.length < SEATS_PER_TABLE
                 ? <button className="row-action" disabled={busy || missingSetup} onClick={() => assign(guest, selectedTable.number)}>A mesa {selectedTable.number}</button>
                 : <select aria-label={`Asignar mesa a ${guest.name}`} disabled={busy || missingSetup || !openTables.length} value="" onChange={e => assign(guest, Number(e.target.value))}><option value="" disabled>{openTables.length ? 'Asignar…' : 'Sin lugares'}</option>{tableOptions()}</select>)}
@@ -179,5 +183,34 @@ export default function SeatingChart({ guests, guestsLoading, guestsError, canEd
         {!canEdit && <p className="muted seating-readonly">Solo los administradores pueden cambiar las mesas.</p>}
       </aside>
     </div>
+    {createPortal(<SeatingPrintSheet plan={plan} event={event} />, document.body)}
   </section>
+}
+
+/** Hoja para imprimir: solo se ve al imprimir (ver SeatingChart.css). */
+function SeatingPrintSheet({ plan, event }: { plan: ReturnType<typeof seatingPlan>; event?: Props['event'] }) {
+  const printedAt = new Date().toLocaleString('es-MX', { dateStyle: 'long', timeStyle: 'short', timeZone: 'America/Mexico_City' })
+  return <div className="seating-print" aria-hidden="true">
+    <header className="seating-print-head">
+      <div><p>Croquis del evento</p><h1>{event?.name || 'Distribución de mesas'}</h1>{event?.detail && <span>{event.detail}</span>}</div>
+      <div className="seating-print-summary"><strong>{plan.totalTables}</strong> {plan.totalTables === 1 ? 'mesa' : 'mesas'} de {SEATS_PER_TABLE}<br />{plan.assigned} con mesa · {plan.unassigned.length} sin mesa<br /><small>Impreso el {printedAt}</small></div>
+    </header>
+    <div className="seating-print-tables">
+      {plan.tables.map(table => <section key={table.number} className="seating-print-table">
+        <h2>Mesa {table.number}<span>{table.guests.length}/{SEATS_PER_TABLE}</span></h2>
+        <ol>{Array.from({ length: SEATS_PER_TABLE }, (_, index) => {
+          const guest = table.guests[index]
+          return <li key={index} className={guest ? '' : 'empty'}>{guest ? <><strong>{guest.name}</strong>{(guest.company && guest.company !== 'Sin empresa') || statusNote(guest) ? <small>{[guest.company !== 'Sin empresa' ? guest.company : '', statusNote(guest)].filter(Boolean).join(' · ')}</small> : null}</> : <span>Lugar libre</span>}</li>
+        })}</ol>
+      </section>)}
+      {Array.from({ length: plan.extraTables }, (_, index) => <section key={`extra-${index}`} className="seating-print-table extra">
+        <h2>Mesa extra{plan.extraTables > 1 ? ` ${index + 1}` : ''}<span>{SEATS_PER_TABLE}/{SEATS_PER_TABLE}</span></h2>
+        <p>Mesa completa de {SEATS_PER_TABLE} lugares, adicional a la lista de invitados.</p>
+      </section>)}
+    </div>
+    {plan.unassigned.length > 0 && <section className="seating-print-unassigned">
+      <h2>Sin mesa ({plan.unassigned.length})</h2>
+      <ol>{plan.unassigned.map(guest => <li key={guest.id}><strong>{guest.name}</strong>{[guest.company !== 'Sin empresa' ? guest.company : '', statusNote(guest)].filter(Boolean).join(' · ') && <small> · {[guest.company !== 'Sin empresa' ? guest.company : '', statusNote(guest)].filter(Boolean).join(' · ')}</small>}</li>)}</ol>
+    </section>}
+  </div>
 }

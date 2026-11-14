@@ -903,7 +903,7 @@ function SeatingPage() {
   const canEdit = useCanManageInvitations()
   const { data, isPending, isError } = useQuery({ queryKey: ['guests'], queryFn: guestQuery, refetchInterval: supabase ? 60_000 : false })
   const guests = data ?? (supabase ? [] : demoGuests)
-  return <SeatingChart guests={guests} guestsLoading={isPending && Boolean(supabase)} guestsError={isError && !data} canEdit={canEdit} demo={!supabase} />
+  return <SeatingChart guests={guests} guestsLoading={isPending && Boolean(supabase)} guestsError={isError && !data} canEdit={canEdit} demo={!supabase} event={{ name: `${event.title} ${event.accent}`, detail: `${event.date} · ${event.venue}, ${event.city}` }} />
 }
 
 function ConfigurationPage() {
