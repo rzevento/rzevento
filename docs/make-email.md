@@ -95,6 +95,22 @@ Para activar el correo de recordatorio, crea **otro escenario de Make** con el m
 
 En WhatsApp aparece **Abrir recordatorio en WhatsApp** cuando hay un envío previo registrado por cualquier canal y el RSVP sigue pendiente. El texto queda precargado, pero la persona que opera debe enviarlo manualmente. Antes de usarlo conviene actualizar la lista: WhatsApp no puede volver a verificar el RSVP después de abrir el chat.
 
+## Recordatorio del evento para invitados confirmados
+
+Un día antes del evento, el panel muestra **Enviar recordatorio del evento a confirmados** en `Admin > Invitados`, y **Enviar recordatorio del evento** junto al correo de cada invitado confirmado. Sólo lo reciben quienes tienen asistencia confirmada y correo, una vez por persona. La función vuelve a consultar el RSVP antes de cada envío: si ya no está confirmado, lo omite.
+
+Para activarlo:
+
+1. Aplica la migración `supabase/migrations/20261116190000_event_reminder_delivery.sql`, que agrega `invitations.event_reminder_sent_at`.
+2. Crea **otro escenario de Make** con el flujo `Custom webhook → Send an email → Webhook response` (puedes clonar el de recordatorios). Usa como asunto `RZ Consultoría | Te esperamos mañana, martes 17 de noviembre` y como contenido HTML [recordatorio-evento-make.html](../emails/recordatorio-evento-make.html). El destinatario es `{{1.email}}`; conserva `{{1.guest_name}}` y `{{1.invitation_url}}`. La respuesta `{"ok":true}` debe ocurrir sólo después del envío correcto.
+3. Guarda la URL del nuevo webhook en el secreto `MAKE_EVENT_REMINDER_WEBHOOK_URL` de Supabase y habilita en ese webhook la misma clave `MAKE_WEBHOOK_API_KEY`.
+4. Publica la función `send-invitation` actualizada y después la aplicación.
+5. Prueba con un contacto propio marcado como confirmado antes del envío masivo.
+
+El texto dice «mañana»: envíalo el día previo al evento o ajusta el asunto y el contenido. Si el panel avisa que el servidor no reconoció el recordatorio del evento, falta publicar la función actualizada.
+
+Para confirmados con celular, el menú de tres puntos ofrece **Abrir recordatorio del evento en WhatsApp**, con el texto precargado para enviarlo manualmente. Ese envío no queda registrado.
+
 ## Documentación oficial
 
 - [Webhooks y respuestas en Make](https://apps.make.com/gateway)

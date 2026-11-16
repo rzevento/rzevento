@@ -44,9 +44,13 @@ Deno.serve(async (request) => {
     if (memberError || !['admin', 'leader'].includes(member?.roleCode || '')) return json({ error: 'No tienes permiso para enviar invitaciones' }, 403)
     if (!guest.email) return json({ error: 'Este invitado no tiene correo electrónico' }, 400)
 
+    const reminder = input?.reminder === true
+    const eventReminder = input?.event_reminder === true
+    if (reminder && eventReminder) return json({ error: 'Elige un solo tipo de recordatorio.' }, 400)
     const admin = userClient
+    // The event reminder column is read only in that mode, so other sends work before its migration is applied.
     const { data: invitation, error: invitationError } = await admin.from('invitations')
-      .select('id, token, status, sent_at, reminder_sent_at').eq('event_id', guest.event_id).eq('guest_id', guest.id).maybeSingle()
+      .select(`id, token, status, sent_at, reminder_sent_at${eventReminder ? ', event_reminder_sent_at' : ''}`).eq('event_id', guest.event_id).eq('guest_id', guest.id).maybeSingle()
     if (invitationError) {
       console.error('send-invitation: invitation lookup failed', {
         code: invitationError.code,
@@ -55,8 +59,13 @@ Deno.serve(async (request) => {
       return json({ error: 'No se pudo consultar la invitación. Revisa los registros de send-invitation en Supabase.' }, 500)
     }
     if (!invitation) return json({ error: 'Este invitado no tiene una invitación asociada al evento' }, 404)
-    const reminder = input?.reminder === true
-    if (reminder) {
+    if (eventReminder) {
+      const { data: rsvp, error: rsvpError } = await userClient.from('rsvps')
+        .select('status').eq('event_id', guest.event_id).eq('guest_id', guest.id).maybeSingle()
+      if (rsvpError) return json({ error: 'No se pudo verificar la respuesta del invitado.' }, 500)
+      if (rsvp?.status !== 'confirmed') return json({ error: 'Este invitado no tiene asistencia confirmada; no se envió el recordatorio del evento.' }, 409)
+      if (invitation.event_reminder_sent_at) return json({ ok: true, already_sent: true, event_reminder_sent_at: invitation.event_reminder_sent_at })
+    } else if (reminder) {
       if (input?.resend !== true) return json({ error: 'El recordatorio requiere un reenvío explícito.' }, 400)
       if (!invitation.sent_at && invitation.status !== 'sent') return json({ error: 'Envía primero la invitación por correo antes de enviar un recordatorio.' }, 400)
       const { data: rsvp, error: rsvpError } = await userClient.from('rsvps')
@@ -67,12 +76,12 @@ Deno.serve(async (request) => {
       }
       if (invitation.reminder_sent_at) return json({ ok: true, already_sent: true, reminder_sent_at: invitation.reminder_sent_at })
     }
-    if ((invitation.sent_at || invitation.status === 'sent') && input?.resend !== true) return json({ ok: true, already_sent: true })
+    if (!eventReminder && (invitation.sent_at || invitation.status === 'sent') && input?.resend !== true) return json({ ok: true, already_sent: true })
 
-    const webhook = Deno.env.get(reminder ? 'MAKE_REMINDER_WEBHOOK_URL' : 'MAKE_WEBHOOK_URL')?.trim()
+    const webhook = Deno.env.get(eventReminder ? 'MAKE_EVENT_REMINDER_WEBHOOK_URL' : reminder ? 'MAKE_REMINDER_WEBHOOK_URL' : 'MAKE_WEBHOOK_URL')?.trim()
     const apiKey = Deno.env.get('MAKE_WEBHOOK_API_KEY')?.trim()
     const publicSite = Deno.env.get('PUBLIC_SITE_URL')?.trim()
-    if (!webhook || !apiKey || !publicSite) return json({ error: reminder ? 'Configura MAKE_REMINDER_WEBHOOK_URL para enviar recordatorios.' : 'Configura MAKE_WEBHOOK_URL, MAKE_WEBHOOK_API_KEY y PUBLIC_SITE_URL en Secrets' }, 500)
+    if (!webhook || !apiKey || !publicSite) return json({ error: eventReminder ? 'Configura MAKE_EVENT_REMINDER_WEBHOOK_URL para enviar el recordatorio del evento.' : reminder ? 'Configura MAKE_REMINDER_WEBHOOK_URL para enviar recordatorios.' : 'Configura MAKE_WEBHOOK_URL, MAKE_WEBHOOK_API_KEY y PUBLIC_SITE_URL en Secrets' }, 500)
     let webhookUrl: URL, siteUrl: URL
     try {
       webhookUrl = new URL(webhook)
@@ -83,7 +92,7 @@ Deno.serve(async (request) => {
     }
     const invitationUrl = new URL(`/registro/${encodeURIComponent(invitation.token)}`, siteUrl.origin).href
 
-    const { error: auditError } = await userClient.rpc('record_organizer_email_attempt', { target_guest_id: guest.id, is_resend: input?.resend === true })
+    const { error: auditError } = await userClient.rpc('record_organizer_email_attempt', { target_guest_id: guest.id, is_resend: eventReminder || input?.resend === true })
     if (auditError) return json({ error: 'No se pudo validar y registrar el envío. Vuelve a tu cuenta e intenta de nuevo.' }, 403)
 
     // Only an explicit successful scenario response counts as sent, never "Accepted".
@@ -98,6 +107,7 @@ Deno.serve(async (request) => {
           email: guest.email,
           invitation_url: invitationUrl,
           ...(reminder ? { reminder: true } : {}),
+          ...(eventReminder ? { event_reminder: true } : {}),
         }),
         signal: AbortSignal.timeout(25000),
       })
@@ -109,10 +119,10 @@ Deno.serve(async (request) => {
 
     const serviceClient = createClient(supabaseUrl, secretKey, { auth: { persistSession: false, autoRefreshToken: false } })
     const { data: saved, error: updateError } = await serviceClient.from('invitations')
-      .update(reminder ? { reminder_sent_at: new Date().toISOString() } : { status: 'sent', sent_at: new Date().toISOString() })
-      .eq('id', invitation.id).eq('event_id', guest.event_id).eq('guest_id', guest.id).select('id, reminder_sent_at').maybeSingle()
+      .update(eventReminder ? { event_reminder_sent_at: new Date().toISOString() } : reminder ? { reminder_sent_at: new Date().toISOString() } : { status: 'sent', sent_at: new Date().toISOString() })
+      .eq('id', invitation.id).eq('event_id', guest.event_id).eq('guest_id', guest.id).select(eventReminder ? 'id, event_reminder_sent_at' : 'id, reminder_sent_at').maybeSingle()
     if (updateError || !saved) return json({ error: 'Make confirmó el envío, pero no se guardó el estado. No reenvíes: revisa la invitación en Supabase.' }, 500)
-    return json({ ok: true, invitation_url: invitationUrl, ...(reminder ? { reminder_sent_at: saved.reminder_sent_at } : {}) })
+    return json({ ok: true, invitation_url: invitationUrl, ...(reminder ? { reminder_sent_at: saved.reminder_sent_at } : {}), ...(eventReminder ? { event_reminder_sent_at: saved.event_reminder_sent_at } : {}) })
   } catch {
     return json({ error: 'No se pudo completar la solicitud. Revisa el historial de Make antes de reintentar.' }, 500)
   }

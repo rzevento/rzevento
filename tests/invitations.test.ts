@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { canSendPendingEmail, canSendReminderEmail, whatsappPhone, whatsappInvitationUrl } from '../src/lib/invitations.ts'
+import { canSendEventReminderEmail, canSendPendingEmail, canSendReminderEmail, whatsappPhone, whatsappInvitationUrl } from '../src/lib/invitations.ts'
 
 test('bulk email only includes contacts with email and no recorded delivery in either channel', () => {
   const pending = { email: 'ana@example.com', invite: 'Pendiente' }
@@ -62,4 +62,21 @@ test('rejects local or unsafe public site URLs', () => {
   for (const site of ['http://localhost:5173', 'http://127.0.0.1:5173', 'http://[::1]:5173', 'javascript:alert(1)']) {
     assert.throws(() => whatsappInvitationUrl('3312345678', 'Ana', 'token', site))
   }
+})
+
+test('event reminder includes only confirmed guests with email who have not received it', () => {
+  const confirmed = { email: 'ana@example.com', status: 'Confirmado' }
+  assert.equal(canSendEventReminderEmail(confirmed), true)
+  assert.equal(canSendEventReminderEmail({ ...confirmed, email: ' ' }), false)
+  assert.equal(canSendEventReminderEmail({ ...confirmed, status: 'Pendiente' }), false)
+  assert.equal(canSendEventReminderEmail({ ...confirmed, status: 'Canceló' }), false)
+  assert.equal(canSendEventReminderEmail({ ...confirmed, eventReminderSentAt: '2026-11-16T20:00:00Z' }), false)
+})
+
+test('event reminder on WhatsApp gives date, time, venue and the personal link', () => {
+  const text = new URL(whatsappInvitationUrl('3312345678', 'Ana', 'token', 'https://evento.example.com', 'event')).searchParams.get('text') || ''
+  assert.match(text, /mañana, martes 17 de noviembre/)
+  assert.match(text, /8:30 h/)
+  assert.match(text, /Hyatt Regency Andares/)
+  assert.match(text, /https:\/\/evento.example.com\/registro\/token/)
 })

@@ -238,15 +238,15 @@ export async function markInvitationSent(guestId: string) {
   })
 }
 
-export async function sendInvitation(guestId: string, resend = false, reminder = false) {
+export async function sendInvitation(guestId: string, resend = false, reminder = false, eventReminder = false) {
   return organizerAction(async () => {
     if (!supabase) return { data: null, error: null, demo: true }
-    const { data, error } = await supabase.functions.invoke('send-invitation', { body: { guest_id: guestId, resend, reminder } })
+    const { data, error } = await supabase.functions.invoke('send-invitation', { body: { guest_id: guestId, resend, reminder, ...(eventReminder ? { event_reminder: true } : {}) } })
     if (error && 'context' in error && error.context instanceof Response) {
       const details = await error.context.json().catch(() => null)
       if (typeof details?.error === 'string') return { data, error: new Error(details.error), demo: false }
     }
-    if (!error && resend && data?.already_sent && !reminder) return { data, error: new Error('El servidor no realizó el reenvío. Actualiza la función de envío antes de reintentar.'), demo: false }
+    if (!error && resend && data?.already_sent && !reminder && !eventReminder) return { data, error: new Error('El servidor no realizó el reenvío. Actualiza la función de envío antes de reintentar.'), demo: false }
     return { data, error, demo: false }
   })
 }

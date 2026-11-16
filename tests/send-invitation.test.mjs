@@ -9,7 +9,7 @@ const compiled = ts.transpileModule(source, { compilerOptions: { target: ts.Scri
 const id = '00000000-0000-0000-0000-000000000001'
 function setup(options = {}) {
   let handler, sends = 0, updates = 0, sentPayload
-  const env = { SUPABASE_URL: 'https://test.supabase.co', SUPABASE_ANON_KEY: 'public', SUPABASE_SERVICE_ROLE_KEY: 'secret', MAKE_WEBHOOK_URL: 'https://hook.make.com/test', MAKE_REMINDER_WEBHOOK_URL: 'https://hook.make.com/reminder', MAKE_WEBHOOK_API_KEY: 'test-key', PUBLIC_SITE_URL: 'https://evento.example.com', ...options.env }
+  const env = { SUPABASE_URL: 'https://test.supabase.co', SUPABASE_ANON_KEY: 'public', SUPABASE_SERVICE_ROLE_KEY: 'secret', MAKE_WEBHOOK_URL: 'https://hook.make.com/test', MAKE_REMINDER_WEBHOOK_URL: 'https://hook.make.com/reminder', MAKE_EVENT_REMINDER_WEBHOOK_URL: 'https://hook.make.com/event-reminder', MAKE_WEBHOOK_API_KEY: 'test-key', PUBLIC_SITE_URL: 'https://evento.example.com', ...options.env }
   const createClient = (_url, key, config) => ({
     auth: { getUser: async () => ({ data: { user: options.invalidAuth ? null : { id: 'admin' } }, error: null }) },
     rpc: async (name) => { if (name === 'record_organizer_email_attempt') return {error: options.auditError ? new Error('denied') : null}; assert.equal(name, 'get_organizer_context'); return { data: { roleCode: options.role || 'admin' }, error: options.contextError ? new Error('Session expired') : null } },
@@ -23,12 +23,12 @@ function setup(options = {}) {
       let updating = false
       const chain = {
         select() { return chain }, eq() { return chain },
-        update(values) { updates++; updating = true; assert.equal(values.status, 'sent'); assert.equal('whatsapp_sent_at' in values, false); return chain },
+        update(values) { updates++; updating = true; assert.deepEqual(Object.keys(values), options.eventReminder ? ['event_reminder_sent_at'] : options.reminder ? ['reminder_sent_at'] : ['status', 'sent_at']); assert.equal('whatsapp_sent_at' in values, false); return chain },
         async maybeSingle() {
-          if (updating) return { data: options.updateError ? null : {id}, error: options.updateError ? new Error('db') : null }
+          if (updating) return { data: options.updateError ? null : {id, event_reminder_sent_at: '2026-11-16T20:00:00Z'}, error: options.updateError ? new Error('db') : null }
           if (table === 'invitations' && options.invitationError) return { data: null, error: { code: '42501', message: 'permission denied' } }
           if (table === 'invitations' && options.noInvitation) return { data: null, error: null }
-          const data = table === 'guests' ? (options.noGuest ? null : { id, event_id: 'event', full_name: '<Ana>', email: options.noEmail ? null : 'ana@example.com' }) : table === 'rsvps' ? (options.rsvpStatus ? {status: options.rsvpStatus} : null) : table === 'event_members' ? {role: options.role || 'admin'} : {id, token: 'token', status: options.alreadySent ? 'sent' : 'pending', sent_at: null}
+          const data = table === 'guests' ? (options.noGuest ? null : { id, event_id: 'event', full_name: '<Ana>', email: options.noEmail ? null : 'ana@example.com' }) : table === 'rsvps' ? (options.rsvpStatus ? {status: options.rsvpStatus} : null) : table === 'event_members' ? {role: options.role || 'admin'} : {id, token: 'token', status: options.alreadySent ? 'sent' : 'pending', sent_at: null, event_reminder_sent_at: options.eventReminded ? '2026-11-16T20:00:00Z' : null}
           return { data, error: null }
         },
       }
@@ -39,7 +39,7 @@ function setup(options = {}) {
     createClient, URL, Response, AbortSignal, console: { error() {} },
     Deno: { env: { get: key => env[key] }, serve: fn => { handler = fn } },
     fetch: async (url, init) => {
-      sends++; assert.equal(url, options.reminder ? env.MAKE_REMINDER_WEBHOOK_URL : env.MAKE_WEBHOOK_URL); assert.equal(init.headers['x-make-apikey'], 'test-key')
+      sends++; assert.equal(url, options.eventReminder ? env.MAKE_EVENT_REMINDER_WEBHOOK_URL : options.reminder ? env.MAKE_REMINDER_WEBHOOK_URL : env.MAKE_WEBHOOK_URL); assert.equal(init.headers['x-make-apikey'], 'test-key')
       sentPayload = JSON.parse(init.body)
       if(options.timeout) throw new Error('timeout')
       return new Response(options.reply ?? '{"ok":true}', { status: options.status || 200 })
@@ -140,4 +140,26 @@ test('reminder requires an earlier email, no RSVP, and a configured webhook', as
     assert.notEqual((await app.call({ guest_id: id, resend: true, reminder: true })).status, 200)
     assert.deepEqual(app.counts(), { sends: 0, updates: 0 })
   }
+})
+
+test('event reminder goes only to confirmed guests, once, through its own webhook', async () => {
+  const app = setup({ eventReminder: true, rsvpStatus: 'confirmed' })
+  const response = await app.call({ guest_id: id, event_reminder: true })
+  assert.equal(response.status, 200)
+  assert.equal((await response.json()).event_reminder_sent_at, '2026-11-16T20:00:00Z')
+  assert.deepEqual(app.counts(), { sends: 1, updates: 1 })
+  assert.equal(app.payload().event_reminder, true)
+  assert.equal(app.payload().invitation_url, 'https://evento.example.com/registro/token')
+
+  const repeated = setup({ eventReminder: true, rsvpStatus: 'confirmed', eventReminded: true })
+  assert.equal((await (await repeated.call({ guest_id: id, event_reminder: true })).json()).already_sent, true)
+  assert.deepEqual(repeated.counts(), { sends: 0, updates: 0 })
+
+  for (const options of [{}, { rsvpStatus: 'cancelled' }, { rsvpStatus: 'declined' }, { rsvpStatus: 'confirmed', env: { MAKE_EVENT_REMINDER_WEBHOOK_URL: '' } }]) {
+    const blocked = setup({ eventReminder: true, alreadySent: true, ...options })
+    assert.notEqual((await blocked.call({ guest_id: id, event_reminder: true })).status, 200)
+    assert.deepEqual(blocked.counts(), { sends: 0, updates: 0 })
+  }
+  const both = setup({ rsvpStatus: 'confirmed' })
+  assert.equal((await both.call({ guest_id: id, resend: true, reminder: true, event_reminder: true })).status, 400)
 })

@@ -6,6 +6,11 @@ export function canSendReminderEmail(guest: { email: string; invite: string; sta
   return Boolean(guest.email.trim()) && guest.invite === 'Enviada' && guest.status === 'Pendiente' && !guest.reminderSentAt
 }
 
+/** Day-before reminder: confirmed guests with email who have not received it yet. */
+export function canSendEventReminderEmail(guest: { email: string; status: string; eventReminderSentAt?: string | null }): boolean {
+  return Boolean(guest.email.trim()) && guest.status === 'Confirmado' && !guest.eventReminderSentAt
+}
+
 /** Ten-digit local numbers belong to Mexico; other countries need a country code. */
 export function whatsappPhone(value: string): string | null {
   const input = value.trim()
@@ -18,7 +23,7 @@ export function whatsappPhone(value: string): string | null {
   return /^[1-9]\d{7,14}$/.test(digits) ? digits : null
 }
 
-export function whatsappInvitationUrl(phone: string, name: string, token: string, siteUrl: string, reminder = false): string {
+export function whatsappInvitationUrl(phone: string, name: string, token: string, siteUrl: string, reminder: boolean | 'event' = false): string {
   const recipient = whatsappPhone(phone)
   if (!recipient) throw new Error('Revisa el celular. Usa 10 dígitos para México o + y el código de país para otros países.')
   if (!token) throw new Error('Este invitado todavía no tiene un enlace de invitación.')
@@ -29,7 +34,9 @@ export function whatsappInvitationUrl(phone: string, name: string, token: string
   }
   const invitation = new URL(`/registro/${encodeURIComponent(token)}`, site.origin).href
   const greeting = name.trim() && name.trim() !== 'Invitado pendiente' ? `Apreciable ${name.trim()}:` : 'Reciba un cordial saludo.'
-  const message = reminder
+  const message = reminder === 'event'
+    ? `${greeting}\n\nLe agradecemos haber confirmado su asistencia. Le recordamos con gusto que *mañana, martes 17 de noviembre*, le esperamos en la celebración de los 10 años de RZ Consultoría y la presentación del libro *Familias empresarias en la era de las turbulencias: retos y oportunidades*.\n\n*Registro:* 8:30 h\n*Inicio:* 9:00 h\n*Sede:* Hyatt Regency Andares, Guadalajara, Jalisco.\n\nPara agilizar su registro, tenga a la mano su entrada con código QR. Puede consultarla en su enlace personal:\n${invitation}\n\nSu entrada es personal e intransferible.\n\nSerá un gusto recibirle.\n\n*RZ Consultoría*`
+    : reminder
     ? `${greeting}\n\nLe recordamos con gusto la invitación de RZ Consultoría a *Familias empresarias en la era de las turbulencias: retos y oportunidades*, el martes 17 de noviembre de 2026 a las 9:00 h en Hyatt Regency Andares, Guadalajara. El registro inicia a las 8:30 h.\n\nAún no hemos recibido su respuesta. Le agradeceremos confirmar su asistencia antes del 16 de noviembre desde su enlace personal, donde también encontrará los detalles del evento:\n${invitation}\n\nSi ya respondió recientemente, por favor omita este recordatorio. La invitación es personal e intransferible.\n\nSerá un gusto contar con su presencia.\n\n*RZ Consultoría*`
     : `${greeting}\n\nRZ Consultoría tiene el gusto de invitarle a la conferencia privada:\n\n*Familias empresarias en la era de las turbulencias: retos y oportunidades*\n\nUn encuentro para reflexionar sobre los desafíos y las oportunidades de las familias empresarias, con la participación de *Manuel Bermejo Sánchez* y la moderación de *José Roberto Romo Zepeda*.\n\n*Fecha:* martes 17 de noviembre de 2026.\n*Horario:* 9:00 h. Registro a partir de las 8:30 h.\n*Sede:* Hyatt Regency Andares, Guadalajara, Jalisco.\n\nAgradeceremos confirmar su asistencia antes del 16 de noviembre a través de su enlace personal, donde podrá consultar los detalles del evento:\n${invitation}\n\nEsta invitación es personal e intransferible.\n\nSerá un gusto contar con su presencia.\n\nAtentamente,\n*RZ Consultoría*`
   return `https://wa.me/${recipient}?text=${encodeURIComponent(message)}`
