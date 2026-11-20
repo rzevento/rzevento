@@ -111,6 +111,23 @@ El texto dice «mañana»: envíalo el día previo al evento o ajusta el asunto 
 
 Para confirmados con celular, el menú de tres puntos ofrece **Abrir recordatorio del evento en WhatsApp**, con el texto precargado para enviarlo manualmente. Ese envío no queda registrado.
 
+## Material del evento para todos los invitados
+
+Después del evento, el material se envía a **todos los invitados con correo**, sin importar si confirmaron, asistieron o cancelaron. Este envío no pasa por el panel ni queda registrado en Supabase.
+
+- **Correo:** [material-evento-make.html](../emails/material-evento-make.html). Asunto sugerido: `RZ Consultoría | Gracias por ser parte de estos 10 años`.
+- **WhatsApp:** [material-evento-whatsapp.txt](../emails/material-evento-whatsapp.txt). Sustituye `[Nombre]` y adjunta el archivo en el chat antes de enviarlo.
+
+Para enviarlo por correo desde Make:
+
+1. En `Admin > Invitados`, usa **Exportar CSV** y quita las filas sin `correo`. Revisa las que digan `Invitado pendiente` en `nombre` y corrígelas o cambia el saludo a «Hola:».
+2. Sube el CSV a una hoja de Google Sheets y el archivo del material a Google Drive.
+3. Crea un escenario nuevo en Make: `Google Sheets → Search rows` (con encabezados) → `Google Drive → Download a file` (el material) → `Email → Send an Email`.
+4. En **Send an Email**, usa la misma conexión SMTP de GoDaddy que el resto de los correos (ver abajo). Destinatario: la columna `correo`. Asunto: `RZ Consultoría | Gracias por ser parte de estos 10 años`. Contenido HTML: la plantilla, sin el comentario de la primera línea. En **Attachments**, el archivo que descarga Google Drive.
+5. En la plantilla, reemplaza `{{1.guest_name}}` por la columna `nombre` de Google Sheets, eligiéndola desde el selector de Make (no escribas el texto a mano).
+6. Prueba primero con una hoja que solo tenga tu propio correo: confirma que el nombre, el diseño y el adjunto llegan bien. Revisa también el límite diario de envíos y el tamaño máximo de adjuntos de tu plan de GoDaddy; si la lista lo supera, divide la hoja y envíala en varios días.
+7. Cambia a la hoja completa y ejecuta **Run once** una sola vez. Si se detiene a la mitad, revisa en el historial de Make hasta qué fila llegó y vuelve a correr solo con las filas faltantes, para que nadie lo reciba dos veces.
+
 ## Documentación oficial
 
 - [Webhooks y respuestas en Make](https://apps.make.com/gateway)
